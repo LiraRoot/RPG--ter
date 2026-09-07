@@ -19,13 +19,82 @@ export const BARRAS_PADRAO = [
   { nome: 'Energia', valor_atual: 100, valor_maximo: 100 },
 ]
 
+export const PERICIAS_PADRAO = {
+  Força: ['Atletismo'],
+  Agilidade: ['Acrobacia', 'Furtividade', 'Instinto'],
+  Destreza: ['Prestidigitação', 'Manuseio de Ferramentas / Ladinagem', 'Pontaria'],
+  Constituição: ['Resistência Física'],
+  Inteligência: ['Arcanismo', 'História', 'Investigação', 'Natureza', 'Tecnomancia / Runologia', 'Medicina'],
+  Sabedoria: ['Percepção', 'Intuição', 'Sobrevivência', 'Religião', 'Foco', 'Vontade'],
+  Carisma: ['Persuasão', 'Enganação', 'Intimidação', 'Performance'],
+}
+
+export const IMAGEM_MUNDO_PADRAO = '/mundo-padrao.jpg'
+
+export function calcularValorPericia(valorAtributo) {
+  const atributo = Number(valorAtributo ?? 0)
+  return Math.floor((atributo - 10) / 2)
+}
+
+// ---------- Mundos ----------
+
+export async function listarMundos() {
+  const { data, error } = await supabase
+    .from('mundos')
+    .select('*')
+    .order('criado_em', { ascending: true })
+  if (error) throw error
+  return data
+}
+
+export async function buscarMundo(id) {
+  const { data, error } = await supabase
+    .from('mundos')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function criarMundo({ nome, mestre, imagem_url = null, campanha_ativa = false }) {
+  const { data, error } = await supabase
+    .from('mundos')
+    .insert({
+      nome: nome || 'Novo mundo',
+      mestre: mestre || 'Sem mestre',
+      imagem_url: imagem_url || IMAGEM_MUNDO_PADRAO,
+      campanha_ativa: Boolean(campanha_ativa),
+    })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function atualizarMundo(id, campos) {
+  const { error } = await supabase.from('mundos').update(campos).eq('id', id)
+  if (error) throw error
+}
+
+export async function excluirMundo(id) {
+  const { error } = await supabase.from('mundos').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ---------- Personagens ----------
 
-export async function listarPersonagens() {
-  const { data, error } = await supabase
+export async function listarPersonagens(mundoId = null) {
+  let query = supabase
     .from('personagens')
     .select('*')
     .order('criado_em', { ascending: true })
+
+  if (mundoId) {
+    query = query.eq('mundo_id', mundoId)
+  }
+
+  const { data, error } = await query
   if (error) throw error
   return data
 }
@@ -40,33 +109,53 @@ export async function buscarPersonagem(id) {
   return data
 }
 
-export async function criarPersonagem({ nome, genero, imagem_url }) {
+export async function criarPersonagem({ nome, genero, imagem_url, nivel = 1, mundo_id = null, atributos, barras, pericias }) {
   const { data, error } = await supabase
     .from('personagens')
-    .insert({ nome, genero, imagem_url })
+    .insert({ nome, genero, imagem_url, nivel: Number(nivel) || 1, mundo_id: mundo_id ?? null })
     .select()
     .single()
   if (error) throw error
 
-  // já cria os atributos base zerados
-  const atributos = ATRIBUTOS_PADRAO.map((nome, i) => ({
-    personagem_id: data.id,
-    nome,
-    valor: 0,
-    ordem: i,
-  }))
-  const { error: errAtributos } = await supabase.from('atributos').insert(atributos)
+  const atributosPadrao = (atributos && atributos.length
+    ? atributos
+    : ATRIBUTOS_PADRAO).map((nomeAtributo, i) => ({
+      personagem_id: data.id,
+      nome: nomeAtributo.nome ?? nomeAtributo,
+      valor: Number(nomeAtributo.valor ?? 0),
+      ordem: i,
+    }))
+  const { error: errAtributos } = await supabase.from('atributos').insert(atributosPadrao)
   if (errAtributos) throw errAtributos
 
-  const barras = BARRAS_PADRAO.map((barra, i) => ({
-    personagem_id: data.id,
-    nome: barra.nome,
-    valor_atual: barra.valor_atual,
-    valor_maximo: barra.valor_maximo,
-    ordem: i,
-  }))
-  const { error: errBarras } = await supabase.from('barras_status').insert(barras)
+  const barrasPadrao = (barras && barras.length
+    ? barras
+    : BARRAS_PADRAO).map((barra, i) => ({
+      personagem_id: data.id,
+      nome: barra.nome ?? barra,
+      valor_atual: Number(barra.valor_atual ?? 100),
+      valor_maximo: Number(barra.valor_maximo ?? 100),
+      ordem: i,
+    }))
+  const { error: errBarras } = await supabase.from('barras_status').insert(barrasPadrao)
   if (errBarras) throw errBarras
+
+  const periciasPadrao = (pericias && pericias.length
+    ? pericias
+    : Object.entries(PERICIAS_PADRAO).flatMap(([atributo, nomes]) =>
+        nomes.map((nome, i) => ({ atributo, nome, valor: 0, ordem: i }))
+      )).map((pericia, i) => {
+        const valorAtributo = (atributosPadrao.find((atributo) => atributo.nome === pericia.atributo)?.valor ?? 0)
+        return {
+          personagem_id: data.id,
+          atributo: pericia.atributo,
+          nome: pericia.nome,
+          valor: calcularValorPericia(valorAtributo),
+          ordem: i,
+        }
+      })
+  const { error: errPericias } = await supabase.from('pericias').insert(periciasPadrao)
+  if (errPericias) throw errPericias
 
   return data
 }
@@ -84,6 +173,14 @@ export async function excluirPersonagem(id) {
 // ---------- Imagem ----------
 
 export async function enviarImagemPersonagem(file) {
+  const nomeArquivo = `${crypto.randomUUID()}-${file.name}`
+  const { error } = await supabase.storage.from('personagens').upload(nomeArquivo, file)
+  if (error) throw error
+  const { data } = supabase.storage.from('personagens').getPublicUrl(nomeArquivo)
+  return data.publicUrl
+}
+
+export async function enviarImagemMundo(file) {
   const nomeArquivo = `${crypto.randomUUID()}-${file.name}`
   const { error } = await supabase.storage.from('personagens').upload(nomeArquivo, file)
   if (error) throw error
@@ -149,6 +246,35 @@ export async function removerBarra(id) {
   if (error) throw error
 }
 
+// ---------- Perícias ----------
+
+export async function listarPericias(personagemId) {
+  const { data, error } = await supabase
+    .from('pericias')
+    .select('*')
+    .eq('personagem_id', personagemId)
+    .order('ordem', { ascending: true })
+  if (error) throw error
+  return data
+}
+
+export async function adicionarPericia(personagemId, atributo, nome) {
+  const { error } = await supabase
+    .from('pericias')
+    .insert({ personagem_id: personagemId, atributo, nome, valor: 0 })
+  if (error) throw error
+}
+
+export async function atualizarPericia(id, campos) {
+  const { error } = await supabase.from('pericias').update(campos).eq('id', id)
+  if (error) throw error
+}
+
+export async function removerPericia(id) {
+  const { error } = await supabase.from('pericias').delete().eq('id', id)
+  if (error) throw error
+}
+
 // ---------- Habilidades ----------
 
 export async function listarHabilidades(personagemId) {
@@ -188,16 +314,26 @@ export function escutarMudancasPersonagem(personagemId, aoMudar) {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'personagens', filter: `id=eq.${personagemId}` }, aoMudar)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'atributos', filter: `personagem_id=eq.${personagemId}` }, aoMudar)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'barras_status', filter: `personagem_id=eq.${personagemId}` }, aoMudar)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pericias', filter: `personagem_id=eq.${personagemId}` }, aoMudar)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'habilidades', filter: `personagem_id=eq.${personagemId}` }, aoMudar)
     .subscribe()
 
   return () => supabase.removeChannel(canal)
 }
 
-export function escutarMudancasListaPersonagens(aoMudar) {
+export function escutarMudancasListaPersonagens(aoMudar, mundoId = null) {
   const canal = supabase
-    .channel('lista-personagens')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'personagens' }, aoMudar)
+    .channel(mundoId ? `lista-personagens-${mundoId}` : 'lista-personagens')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'personagens',
+        ...(mundoId ? { filter: `mundo_id=eq.${mundoId}` } : {}),
+      },
+      aoMudar
+    )
     .subscribe()
 
   return () => supabase.removeChannel(canal)
