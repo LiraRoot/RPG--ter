@@ -29,6 +29,24 @@ import AttributeList from '../components/AttributeList'
 import StatusBarList from '../components/StatusBarList'
 import AbilityList from '../components/AbilityList'
 
+function formatarDescricaoHabilidade(habilidade) {
+  if (!habilidade) return 'Habilidade inexistente'
+
+  const descricao = String(habilidade.descricao || '').trim()
+  const custo = String(habilidade.custo || '').trim()
+  const dano = String(habilidade.dano || '').trim()
+  const cooldown = Number(habilidade.cooldown_turnos ?? 0)
+
+  const custoNumerico = String(custo || '').replace(/[^0-9]/g, '')
+
+  return {
+    descricao: descricao || 'Habilidade inexistente',
+    custo: custoNumerico ? `${custoNumerico} de Mana` : custo || '0 de Mana',
+    dano,
+    cooldown,
+  }
+}
+
 function normalizarBarrasHud(barras = []) {
   const nomesPadrao = ['Vida', 'Mana', 'Estamina']
   const mapa = new Map((barras || []).map((barra) => [String(barra.nome || '').toLowerCase(), barra]))
@@ -65,10 +83,13 @@ function CharacterHud({ personagem, barras = [], habilidades = [] }) {
       }
     }
 
+    const tooltip = formatarDescricaoHabilidade(hab)
+
     return {
       ...hab,
       nome: hab.nome,
-      descricao: hab.descricao || 'Habilidade inexistente',
+      descricao: tooltip.descricao,
+      tooltip,
     }
   })
 
@@ -124,10 +145,26 @@ function CharacterHud({ personagem, barras = [], habilidades = [] }) {
           <div
             key={habilidade.id || `slot-${indice}`}
             className={`character-hud__ability ${!habilidade.id ? 'character-hud__ability--empty' : ''}`}
-            title={habilidade.descricao || 'Habilidade inexistente'}
           >
             <span className="character-hud__ability-label">{habilidade.nome}</span>
-            <span className="character-hud__ability-tooltip">{habilidade.descricao || 'Habilidade inexistente'}</span>
+
+            <span className="character-hud__ability-tooltip">
+              <span className="character-hud__ability-tooltip__header">
+                <span className="character-hud__ability-tooltip__description">{habilidade.tooltip?.descricao || 'Habilidade inexistente'}</span>
+                {habilidade.tooltip?.custo ? (
+                  <span className="character-hud__ability-tooltip__cost">{habilidade.tooltip.custo}</span>
+                ) : null}
+              </span>
+
+              <span className="character-hud__ability-tooltip__footer">
+                {habilidade.tooltip?.dano ? (
+                  <span className="character-hud__ability-tooltip__damage">Dano: {habilidade.tooltip.dano}</span>
+                ) : null}
+                {habilidade.tooltip?.cooldown > 0 ? (
+                  <span className="character-hud__ability-tooltip__cd">CD: {habilidade.tooltip.cooldown} turno{habilidade.tooltip.cooldown === 1 ? '' : 's'}</span>
+                ) : null}
+              </span>
+            </span>
           </div>
         ))}
       </div>
@@ -147,6 +184,7 @@ export default function CharacterSheetPage() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState(null)
   const timersEdicao = useRef({})
+  const ignorarAtualizacaoRemota = useRef(false)
 
   useEffect(() => {
     const perfil = window.sessionStorage.getItem(PERFIL_KEY)
@@ -178,9 +216,13 @@ export default function CharacterSheetPage() {
 
   useEffect(() => {
     carregarTudo()
-    const pararDeEscutar = escutarMudancasPersonagem(id, carregarTudo)
+    const pararDeEscutar = escutarMudancasPersonagem(id, () => {
+      if (ignorarAtualizacaoRemota.current) return
+      carregarTudo()
+    })
     return () => {
       Object.values(timersEdicao.current).forEach(clearTimeout)
+      ignorarAtualizacaoRemota.current = false
       pararDeEscutar()
     }
   }, [id, carregarTudo])
@@ -191,24 +233,60 @@ export default function CharacterSheetPage() {
 
   const agendarAtualizacao = useCallback((chave, salvar) => {
     clearTimeout(timersEdicao.current[chave])
+    ignorarAtualizacaoRemota.current = true
     timersEdicao.current[chave] = setTimeout(async () => {
       try {
         await salvar()
       } catch (e) {
         setErro(e.message)
+      } finally {
+        ignorarAtualizacaoRemota.current = false
       }
     }, 250)
   }, [])
 
+  const limparZeroAoFocarNumero = useCallback((evento) => {
+    if (evento.target.value === '0') {
+      evento.target.value = ''
+    }
+  }, [])
+
   const aoAtualizarAtributo = useCallback((attrId, campos) => {
+    const atributoAtual = atributos.find((item) => item.id === attrId)
+    const valorNovo = Number(campos.valor ?? atributoAtual?.valor ?? 0)
+
     atualizarListaLocal(setAtributos, attrId, campos)
+
+    if (campos.valor !== undefined && atributoAtual?.nome) {
+      const novoValor = Number.isFinite(valorNovo) ? valorNovo : 0
+      const valorPericia = calcularValorPericia(novoValor)
+
+      setPericias((prev) => prev.map((pericia) =>
+        pericia.atributo === atributoAtual.nome
+          ? { ...pericia, valor: valorPericia }
+          : pericia
+      ))
+
+      ;(pericias || [])
+        .filter((pericia) => pericia.atributo === atributoAtual.nome)
+        .forEach((pericia) => {
+          agendarAtualizacao(`pericia-${pericia.id}`, () => atualizarPericia(pericia.id, { valor: valorPericia }))
+        })
+    }
+
     agendarAtualizacao(`atributo-${attrId}`, () => atualizarAtributo(attrId, campos))
-  }, [agendarAtualizacao, atualizarListaLocal])
+  }, [agendarAtualizacao, atributos, atualizarListaLocal, pericias])
 
   const aoAtualizarBarra = useCallback((barraId, campos) => {
     atualizarListaLocal(setBarras, barraId, campos)
     agendarAtualizacao(`barra-${barraId}`, () => atualizarBarra(barraId, campos))
   }, [agendarAtualizacao, atualizarListaLocal])
+
+  const normalizarNumeroInput = useCallback((valor) => {
+    if (valor === '' || valor === null || valor === undefined) return 0
+    const numero = Number(valor)
+    return Number.isFinite(numero) ? numero : 0
+  }, [])
 
   const aoAtualizarHabilidade = useCallback((habId, campos) => {
     atualizarListaLocal(setHabilidades, habId, campos)
@@ -251,12 +329,20 @@ export default function CharacterSheetPage() {
 
       <section className="cabecalho-ficha">
         <div className="imagem-ficha-container">
-          {personagem.imagem_url ? (
-            <img src={personagem.imagem_url} alt={personagem.nome} className="imagem-ficha" />
-          ) : (
-            <div className="imagem-ficha imagem-vazia" />
-          )}
-          <input type="file" accept="image/*" onChange={aoTrocarImagem} />
+          <label className="imagem-ficha-frame imagem-ficha-label" htmlFor="input-foto-edicao">
+            {personagem.imagem_url ? (
+              <img src={personagem.imagem_url} alt={personagem.nome} className="imagem-ficha" />
+            ) : (
+              <div className="imagem-ficha imagem-vazia" />
+            )}
+          </label>
+          <input
+            id="input-foto-edicao"
+            className="input-foto-personagem-hidden"
+            type="file"
+            accept="image/*"
+            onChange={aoTrocarImagem}
+          />
         </div>
 
         <div className="dados-ficha">
@@ -289,8 +375,12 @@ export default function CharacterSheetPage() {
               type="number"
               min="1"
               value={personagem.nivel ?? 1}
+              onFocus={limparZeroAoFocarNumero}
+              onBlur={(e) => {
+                if (e.target.value === '') e.target.value = '1'
+                atualizarPersonagem(id, { nivel: Math.max(1, Number(e.target.value) || 1) })
+              }}
               onChange={(e) => setPersonagem({ ...personagem, nivel: Math.max(1, Number(e.target.value) || 1) })}
-              onBlur={(e) => atualizarPersonagem(id, { nivel: Math.max(1, Number(e.target.value) || 1) })}
             />
           </label>
         </div>
@@ -316,7 +406,8 @@ export default function CharacterSheetPage() {
 
       <AbilityList
         habilidades={habilidades}
-        onAdicionar={() => adicionarHabilidade(id).then(carregarTudo)}
+        onAdicionar={() => adicionarHabilidade(id, 'ativa').then(carregarTudo)}
+        onAdicionarPassiva={() => adicionarHabilidade(id, 'passiva').then(carregarTudo)}
         onAtualizar={aoAtualizarHabilidade}
         onRemover={(habId) => removerHabilidade(habId).then(carregarTudo)}
       />

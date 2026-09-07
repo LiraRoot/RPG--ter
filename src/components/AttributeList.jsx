@@ -15,6 +15,12 @@ export default function AttributeList({
 }) {
   const [novoNome, setNovoNome] = useState('')
 
+  function limparZeroAoFocar(evento) {
+    if (evento.target.value === '0') {
+      evento.target.value = ''
+    }
+  }
+
   function adicionar() {
     if (!novoNome.trim()) return
     onAdicionar(novoNome.trim())
@@ -39,8 +45,12 @@ export default function AttributeList({
                 <input
                   className="input-numero"
                   type="number"
-                  value={attr.valor}
-                  onChange={(e) => onAtualizar(attr.id, { valor: Number(e.target.value) })}
+                  value={attr.valor ?? 0}
+                  onFocus={limparZeroAoFocar}
+                  onBlur={(e) => {
+                    if (e.target.value === '') e.target.value = '0'
+                  }}
+                  onChange={(e) => onAtualizar(attr.id, { valor: Number(e.target.value) || 0 })}
                 />
                 <button className="botao-remover" onClick={() => onRemover(attr.id)}>
                   remover

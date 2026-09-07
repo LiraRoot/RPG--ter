@@ -25,6 +25,7 @@ export default function CreateCharacterPage() {
   const [genero, setGenero] = useState('Elu')
   const [nivel, setNivel] = useState(1)
   const [arquivoImagem, setArquivoImagem] = useState(null)
+  const [previewImagem, setPreviewImagem] = useState('')
   const [atributos, setAtributos] = useState(criarEstadoPadraoAtributos())
   const [barras, setBarras] = useState(criarEstadoPadraoBarras())
   const [pericias, setPericias] = useState(criarEstadoPadraoPericias())
@@ -115,38 +116,54 @@ export default function CreateCharacterPage() {
     <div>
       <h1>Criar personagem</h1>
       <form onSubmit={aoSalvar} className="formulario formulario-criacao">
-        <label>
-          Nome
-          <input value={nome} onChange={(e) => setNome(e.target.value)} required />
-        </label>
+        <div className="criacao-cabecalho">
+          <div className="criacao-foto-bloco">
+            <label className="criacao-foto-frame criacao-foto-label" htmlFor="input-foto-personagem">
+              {previewImagem ? (
+                <img src={previewImagem} alt={nome || 'Preview do personagem'} className="criacao-foto" />
+              ) : (
+                <div className="criacao-foto-vazia">?</div>
+              )}
+            </label>
+            <input
+              id="input-foto-personagem"
+              type="file"
+              accept="image/*"
+              className="input-foto-personagem-hidden"
+              onChange={(e) => {
+                const arquivo = e.target.files[0]
+                setArquivoImagem(arquivo || null)
+                setPreviewImagem(arquivo ? URL.createObjectURL(arquivo) : '')
+              }}
+            />
+          </div>
 
-        <label>
-          Gênero
-          <select value={genero} onChange={(e) => setGenero(e.target.value)}>
-            <option value="Ele">Ele</option>
-            <option value="Ela">Ela</option>
-            <option value="Elu">Elu (não-binário)</option>
-          </select>
-        </label>
+          <div className="criacao-dados">
+            <label className="campo-personagem">
+              <span>Nome</span>
+              <input value={nome} onChange={(e) => setNome(e.target.value)} required />
+            </label>
 
-        <label>
-          Nível
-          <input
-            type="number"
-            min="1"
-            value={nivel}
-            onChange={(e) => setNivel(Math.max(1, Number(e.target.value) || 1))}
-          />
-        </label>
+            <label className="campo-personagem">
+              <span>Gênero</span>
+              <select value={genero} onChange={(e) => setGenero(e.target.value)}>
+                <option value="Ele">Ele</option>
+                <option value="Ela">Ela</option>
+                <option value="Elu">Elu (não-binário)</option>
+              </select>
+            </label>
 
-        <label>
-          Imagem do personagem
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setArquivoImagem(e.target.files[0])}
-          />
-        </label>
+            <label className="campo-personagem">
+              <span>Nível</span>
+              <input
+                type="number"
+                min="1"
+                value={nivel}
+                onChange={(e) => setNivel(Math.max(1, Number(e.target.value) || 1))}
+              />
+            </label>
+          </div>
+        </div>
 
         <section className="secao secao-criacao">
           <h2>Atributos</h2>

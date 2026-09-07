@@ -277,26 +277,100 @@ export async function removerPericia(id) {
 
 // ---------- Habilidades ----------
 
-export async function listarHabilidades(personagemId) {
-  const { data, error } = await supabase
-    .from('habilidades')
-    .select('*')
-    .eq('personagem_id', personagemId)
-    .order('ordem', { ascending: true })
-  if (error) throw error
-  return data
+function ehErroColunaInexistente(error) {
+  const mensagem = (error?.message || '').toLowerCase()
+  return (
+    (mensagem.includes('could not find the') && mensagem.includes('column')) ||
+    (mensagem.includes('column') && mensagem.includes('does not exist'))
+  )
 }
 
-export async function adicionarHabilidade(personagemId) {
-  const { error } = await supabase
-    .from('habilidades')
-    .insert({ personagem_id: personagemId, nome: 'Nova habilidade', descricao: '', custo: '' })
-  if (error) throw error
+export async function listarHabilidades(personagemId) {
+  const consultas = [
+    supabase
+      .from('habilidades')
+      .select('id, personagem_id, nome, descricao, custo, dano, cooldown_turnos, tipo, ordem')
+      .eq('personagem_id', personagemId)
+      .order('ordem', { ascending: true }),
+    supabase
+      .from('habilidades')
+      .select('id, personagem_id, nome, descricao, custo, ordem')
+      .eq('personagem_id', personagemId)
+      .order('ordem', { ascending: true }),
+  ]
+
+  for (const consulta of consultas) {
+    const { data, error } = await consulta
+
+    if (!error) {
+      return (data || []).map((habilidade) => ({
+        ...habilidade,
+        dano: habilidade.dano ?? '',
+        cooldown_turnos: habilidade.cooldown_turnos ?? '',
+        tipo: habilidade.tipo ?? 'ativa',
+      }))
+    }
+
+    if (!ehErroColunaInexistente(error)) {
+      throw error
+    }
+  }
+
+  return []
+}
+
+export async function adicionarHabilidade(personagemId, tipo = 'ativa') {
+  const payloadPadrao = {
+    personagem_id: personagemId,
+    nome: '',
+    descricao: '',
+    custo: '',
+    dano: '',
+    cooldown_turnos: null,
+    tipo: tipo === 'passiva' ? 'passiva' : 'ativa',
+  }
+
+  try {
+    const { error } = await supabase.from('habilidades').insert(payloadPadrao)
+    if (error) throw error
+  } catch (error) {
+    if (!ehErroColunaInexistente(error)) throw error
+
+    const payloadFallback = {
+      personagem_id: personagemId,
+      nome: '',
+      descricao: '',
+      custo: '',
+      dano: '',
+    }
+
+    const { error: erroFallback } = await supabase.from('habilidades').insert(payloadFallback)
+    if (erroFallback) throw erroFallback
+  }
 }
 
 export async function atualizarHabilidade(id, campos) {
-  const { error } = await supabase.from('habilidades').update(campos).eq('id', id)
-  if (error) throw error
+  const payload = { ...campos }
+
+  if (payload.cooldown_turnos === undefined && payload.tipo === undefined) {
+    const { error } = await supabase.from('habilidades').update(payload).eq('id', id)
+    if (error) throw error
+    return
+  }
+
+  try {
+    const { error } = await supabase.from('habilidades').update(payload).eq('id', id)
+    if (error) throw error
+  } catch (error) {
+    if (!ehErroColunaInexistente(error)) throw error
+
+    const payloadFallback = { ...payload }
+    delete payloadFallback.cooldown_turnos
+    delete payloadFallback.tipo
+
+    const { error: erroFallback } = await supabase.from('habilidades').update(payloadFallback).eq('id', id)
+    if (erroFallback) throw erroFallback
+  }
 }
 
 export async function removerHabilidade(id) {

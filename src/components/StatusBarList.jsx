@@ -6,6 +6,12 @@ import { useState } from 'react'
 export default function StatusBarList({ barras, onAdicionar, onAtualizar, onRemover }) {
   const [novoNome, setNovoNome] = useState('')
 
+  function limparZeroAoFocar(evento) {
+    if (evento.target.value === '0') {
+      evento.target.value = ''
+    }
+  }
+
   function adicionar() {
     if (!novoNome.trim()) return
     onAdicionar(novoNome.trim())
@@ -30,15 +36,23 @@ export default function StatusBarList({ barras, onAdicionar, onAtualizar, onRemo
               <input
                 className="input-numero"
                 type="number"
-                value={barra.valor_atual}
-                onChange={(e) => onAtualizar(barra.id, { valor_atual: Number(e.target.value) })}
+                value={barra.valor_atual ?? 0}
+                onFocus={limparZeroAoFocar}
+                onBlur={(e) => {
+                  if (e.target.value === '') e.target.value = '0'
+                }}
+                onChange={(e) => onAtualizar(barra.id, { valor_atual: Number(e.target.value) || 0 })}
               />
               <span>/</span>
               <input
                 className="input-numero"
                 type="number"
-                value={barra.valor_maximo}
-                onChange={(e) => onAtualizar(barra.id, { valor_maximo: Number(e.target.value) })}
+                value={barra.valor_maximo ?? 0}
+                onFocus={limparZeroAoFocar}
+                onBlur={(e) => {
+                  if (e.target.value === '') e.target.value = '0'
+                }}
+                onChange={(e) => onAtualizar(barra.id, { valor_maximo: Number(e.target.value) || 0 })}
               />
               <div className="barra-fundo">
                 <div className="barra-preenchida" style={{ width: `${percentual}%` }} />
