@@ -1,0 +1,21 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  color: #222;
+  background: #fff;
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+  font-size: 1em;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: #345;
+}

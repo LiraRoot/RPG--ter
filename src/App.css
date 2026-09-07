@@ -1,0 +1,193 @@
+.container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 16px 80px;
+}
+
+.cabecalho-lista {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.botao-principal {
+  padding: 8px 14px;
+  background: #444;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.grade-personagens {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.card-personagem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.imagem-card {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.imagem-vazia {
+  background: #eee;
+}
+
+.nome-card {
+  font-weight: bold;
+}
+
+.genero-card {
+  font-size: 0.85em;
+  color: #666;
+}
+
+.link-voltar {
+  display: inline-block;
+  margin-bottom: 16px;
+}
+
+.cabecalho-ficha {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.imagem-ficha-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.imagem-ficha {
+  width: 160px;
+  height: 160px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.dados-ficha {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.input-titulo {
+  font-size: 1.3em;
+}
+
+.secao {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.lista-simples {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.linha-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.linha-habilidade {
+  flex-wrap: wrap;
+}
+
+.input-nome {
+  flex: 1;
+  min-width: 80px;
+}
+
+.input-numero {
+  width: 60px;
+}
+
+.input-custo {
+  width: 160px;
+}
+
+.input-descricao {
+  width: 100%;
+  min-height: 40px;
+}
+
+.barra-fundo {
+  flex: 1;
+  min-width: 80px;
+  height: 10px;
+  background: #eee;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.barra-preenchida {
+  height: 100%;
+  background: #7a9;
+}
+
+.linha-adicionar {
+  display: flex;
+  gap: 6px;
+}
+
+.botao-remover {
+  font-size: 0.8em;
+  color: #a33;
+  background: none;
+  border: 1px solid #a33;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.botao-perigo {
+  color: #a33;
+  border: 1px solid #a33;
+  background: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 400px;
+}
+
+.formulario label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mensagem-erro {
+  color: #a33;
+}
