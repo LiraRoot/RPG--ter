@@ -13,6 +13,12 @@ export const ATRIBUTOS_PADRAO = [
   'Carisma',
 ]
 
+export const BARRAS_PADRAO = [
+  { nome: 'Vida', valor_atual: 100, valor_maximo: 100 },
+  { nome: 'Mana', valor_atual: 100, valor_maximo: 100 },
+  { nome: 'Energia', valor_atual: 100, valor_maximo: 100 },
+]
+
 // ---------- Personagens ----------
 
 export async function listarPersonagens() {
@@ -51,6 +57,16 @@ export async function criarPersonagem({ nome, genero, imagem_url }) {
   }))
   const { error: errAtributos } = await supabase.from('atributos').insert(atributos)
   if (errAtributos) throw errAtributos
+
+  const barras = BARRAS_PADRAO.map((barra, i) => ({
+    personagem_id: data.id,
+    nome: barra.nome,
+    valor_atual: barra.valor_atual,
+    valor_maximo: barra.valor_maximo,
+    ordem: i,
+  }))
+  const { error: errBarras } = await supabase.from('barras_status').insert(barras)
+  if (errBarras) throw errBarras
 
   return data
 }
