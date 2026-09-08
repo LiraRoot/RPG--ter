@@ -1,8 +1,44 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { buscarMundo, listarAtributos, listarBarras, listarHabilidades, listarPericias, listarPersonagens } from '../lib/api'
+import {
+  TIPOS_SOLICITACAO_ROLAGEM,
+  atualizarPericia,
+  atualizarPersonagem,
+  buscarMundo,
+  cancelarSolicitacaoRolagem,
+  concluirSolicitacaoRolagem,
+  criarSolicitacaoRolagem,
+  escutarRolagensDados,
+  escutarSolicitacoesRolagem,
+  listarAtributos,
+  listarBarras,
+  listarHabilidades,
+  listarPericias,
+  listarPersonagens,
+  listarSolicitacoesRolagem,
+} from '../lib/api'
+import { analisarFormulaDados, formatarDetalhamentoDados, formatarFormula, rolarTermos } from '../lib/dados'
+import DiceRoller3D from '../components/DiceRoller3D'
+import DiceIdlePreview from '../components/DiceIdlePreview'
 
 const PERSONAGEM_SELECIONADO_KEY = 'rpg-personagem-selecionado'
+
+function IconeEstrela({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M9 1L12 6L17 9L12 12L9 17L6 12L1 9L6 6Z" />
+      <path d="M18 13L20 16L23 18L20 20L18 23L16 20L13 18L16 16Z" />
+    </svg>
+  )
+}
+
+function IconeX({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+      <path d="M5 5L19 19M19 5L5 19" />
+    </svg>
+  )
+}
 
 const GRID_SIZE = 32
 
@@ -76,10 +112,21 @@ function normalizarBarrasHud(barras = []) {
   })
 }
 
-function CharacterHud({ personagem, barras = [], habilidades = [], pericias = [], atributos = [] }) {
+function CharacterHud({
+  personagem,
+  barras = [],
+  habilidades = [],
+  pericias = [],
+  atributos = [],
+  podeAlocarProficiencia = false,
+  podeRemoverProficiencia = false,
+  onAtribuirProficiencia,
+  onRemoverProficiencia,
+}) {
+  const [atributosExpandidos, setAtributosExpandidos] = useState({})
+
   if (!personagem) return null
 
-  const [atributosExpandidos, setAtributosExpandidos] = useState({})
   const barrasHud = normalizarBarrasHud(barras)
   const nivelPorAtributo = new Map((atributos || []).map((atributo) => [String(atributo.nome || '').toLowerCase(), Number(atributo.valor ?? 0)]))
   const gruposDePericias = [...(pericias || [])]
@@ -130,7 +177,7 @@ function CharacterHud({ personagem, barras = [], habilidades = [], pericias = []
           </div>
         </div>
 
-        <div className="character-hud__level">Nível {personagem.nivel ?? 1}</div>
+        <div className="character-hud__level">{personagem.nivel ?? 1}</div>
       </div>
 
       <div className="character-hud__bars">
@@ -191,7 +238,12 @@ function CharacterHud({ personagem, barras = [], habilidades = [], pericias = []
 
       {atributosOrdenados.length > 0 && (
         <div className="character-hud__pericias">
-          <div className="character-hud__pericias-header">Perícias</div>
+          <div className="secao-cabecalho-com-info">
+            <div className="character-hud__pericias-header">Atributos</div>
+            {(personagem.pontos_proficiencia ?? 0) > 0 && (
+              <span className="proficiencia-contador">Pontos de proficiência: {personagem.pontos_proficiencia}</span>
+            )}
+          </div>
           <div className="character-hud__pericias-groups">
             {atributosOrdenados.map((nomeAtributo) => {
               const periciasDoAtributo = [...gruposDePericias[nomeAtributo]].sort((a, b) => String(a.nome).localeCompare(String(b.nome)))
@@ -210,19 +262,47 @@ function CharacterHud({ personagem, barras = [], habilidades = [], pericias = []
                   >
                     <span className="character-hud__atributo-toggle__label">
                       <span className="character-hud__atributo-toggle__nome">{nomeAtributo}</span>
-                      <span className="character-hud__atributo-toggle__nivel">Nível {nivelAtributo}</span>
+                      <span className="character-hud__atributo-toggle__nivel">{nivelAtributo}</span>
                     </span>
                     <span className={`character-hud__atributo-toggle__arrow ${expandido ? 'is-open' : ''}`}>▾</span>
                   </button>
 
                   {expandido && (
                     <div className="character-hud__pericia-list">
-                      {periciasDoAtributo.map((pericia) => (
-                        <div key={pericia.id || `${pericia.atributo}-${pericia.nome}`} className="character-hud__pericia">
-                          <span className="character-hud__pericia-nome">{pericia.nome}</span>
-                          <span className="character-hud__pericia-valor">Nível {Number(pericia.valor ?? 0)}</span>
-                        </div>
-                      ))}
+                      {periciasDoAtributo.map((pericia) => {
+                        const valorPericia = Number(pericia.valor ?? 0)
+                        const valorFormatado = valorPericia >= 0 ? `+${valorPericia}` : `${valorPericia}`
+                        return (
+                          <div key={pericia.id || `${pericia.atributo}-${pericia.nome}`} className="character-hud__pericia">
+                            <span className="character-hud__pericia-nome-wrap">
+                              <span className="character-hud__pericia-nome">{pericia.nome}</span>
+                              {pericia.proficiente ? (
+                                <button
+                                  type="button"
+                                  className={`character-hud__pericia-estrela is-ativa ${podeRemoverProficiencia ? 'is-removivel' : ''}`}
+                                  title="Proficiência"
+                                  disabled={!podeRemoverProficiencia}
+                                  onClick={() => onRemoverProficiencia?.(pericia.id)}
+                                >
+                                  <IconeEstrela className="icone-proficiencia" />
+                                </button>
+                              ) : (
+                                podeAlocarProficiencia && (personagem.pontos_proficiencia ?? 0) > 0 && (
+                                  <button
+                                    type="button"
+                                    className="character-hud__pericia-estrela is-hover-only"
+                                    title="Adicionar proficiência"
+                                    onClick={() => onAtribuirProficiencia?.(pericia.id)}
+                                  >
+                                    <IconeEstrela className="icone-proficiencia" />
+                                  </button>
+                                )
+                              )}
+                            </span>
+                            <span className="character-hud__pericia-valor">{valorFormatado}</span>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
@@ -248,9 +328,12 @@ export default function CampaignTablePage() {
   const [draggedTurnId, setDraggedTurnId] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState(null)
+  const [erroAcao, setErroAcao] = useState(null)
+  const [hudOculto, setHudOculto] = useState(false)
   const [posicoes, setPosicoes] = useState({})
   const [dragId, setDragId] = useState(null)
   const [hudBarras, setHudBarras] = useState([])
+  const [barrasPorPersonagem, setBarrasPorPersonagem] = useState({})
   const [hudHabilidades, setHudHabilidades] = useState([])
   const [hudAtributos, setHudAtributos] = useState([])
   const [hudPericias, setHudPericias] = useState([])
@@ -259,10 +342,18 @@ export default function CampaignTablePage() {
   const [confirmarFinalizarTurno, setConfirmarFinalizarTurno] = useState(false)
   const [dadoAberto, setDadoAberto] = useState(false)
   const [dadoInput, setDadoInput] = useState('1d20')
-  const [dadoUltimoResultado, setDadoUltimoResultado] = useState(null)
-  const [dadoAnimando, setDadoAnimando] = useState(false)
   const [historicoDados, setHistoricoDados] = useState([])
   const historicoDadosListaRef = useRef(null)
+  const [solicitacoesRolagem, setSolicitacoesRolagem] = useState([])
+  const [solicitarAberto, setSolicitarAberto] = useState(false)
+  const [solicitarPersonagemId, setSolicitarPersonagemId] = useState('')
+  const [solicitarTipo, setSolicitarTipo] = useState(TIPOS_SOLICITACAO_ROLAGEM[0].valor)
+  const [enviandoSolicitacao, setEnviandoSolicitacao] = useState(false)
+  const [solicitacaoAtivaId, setSolicitacaoAtivaId] = useState(null)
+  const ultimaSolicitacaoAvisadaRef = useRef(null)
+  const [rolagemAtiva, setRolagemAtiva] = useState(null)
+  const [enviandoRolagem, setEnviandoRolagem] = useState(false)
+  const canalRolagemRef = useRef(null)
 
   const perfilAtual = (() => {
     try {
@@ -284,6 +375,13 @@ export default function CampaignTablePage() {
   const personagemControladoPeloAventureiro = perfilAtual === 'aventureiro'
     ? personagemDoJogador || null
     : null
+  const solicitacaoPendenteParaMim = perfilAtual === 'aventureiro' && personagemControladoPeloAventureiro
+    ? solicitacoesRolagem.find((item) => item.status === 'pendente' && String(item.personagem_id) === String(personagemControladoPeloAventureiro.id))
+    : null
+
+  function infoTipoSolicitacao(tipo) {
+    return TIPOS_SOLICITACAO_ROLAGEM.find((item) => item.valor === tipo)
+  }
   const turnoAtual = personagens.find((personagem) => String(personagem.id) === String(turnoAtualId)) || personagens[0] || null
   const indiceTurnoAtual = ordemTurnos.findIndex((id) => String(id) === String(turnoAtualId))
   const proximaPersonagemDoTurno = (() => {
@@ -340,6 +438,48 @@ export default function CampaignTablePage() {
     }
   }
 
+  function obterBarraVida(personagemId) {
+    const barras = barrasPorPersonagem[personagemId] || []
+    return barras.find((barra) => String(barra.nome || '').toLowerCase() === 'vida') || null
+  }
+
+  async function aoAtribuirProficienciaHud(periciaId) {
+    const pontosAtuais = personagemAtual?.pontos_proficiencia ?? 0
+    const pericia = hudPericias.find((item) => item.id === periciaId)
+    if (!personagemAtual || !pericia || pericia.proficiente || pontosAtuais <= 0) return
+
+    const novosPontos = pontosAtuais - 1
+    setPersonagemAtual((atual) => atual ? { ...atual, pontos_proficiencia: novosPontos } : atual)
+    setHudPericias((atual) => atual.map((item) => item.id === periciaId ? { ...item, proficiente: true } : item))
+
+    try {
+      await Promise.all([
+        atualizarPericia(periciaId, { proficiente: true }),
+        atualizarPersonagem(personagemAtual.id, { pontos_proficiencia: novosPontos }),
+      ])
+    } catch (e) {
+      setErroAcao(e.message)
+    }
+  }
+
+  async function aoRemoverProficienciaHud(periciaId) {
+    const pericia = hudPericias.find((item) => item.id === periciaId)
+    if (!personagemAtual || !pericia || !pericia.proficiente) return
+
+    const novosPontos = (personagemAtual.pontos_proficiencia ?? 0) + 1
+    setPersonagemAtual((atual) => atual ? { ...atual, pontos_proficiencia: novosPontos } : atual)
+    setHudPericias((atual) => atual.map((item) => item.id === periciaId ? { ...item, proficiente: false } : item))
+
+    try {
+      await Promise.all([
+        atualizarPericia(periciaId, { proficiente: false }),
+        atualizarPersonagem(personagemAtual.id, { pontos_proficiencia: novosPontos }),
+      ])
+    } catch (e) {
+      setErroAcao(e.message)
+    }
+  }
+
   function cancelarAcaoPadrao() {
     setAcaoPadraoExpandida(false)
     setHabilidadeSelecionada(null)
@@ -350,97 +490,83 @@ export default function CampaignTablePage() {
     setAcaoPadraoExpandida(false)
   }
 
-  function analisarExpressaoDados(expressaoBruta) {
-    const expressao = String(expressaoBruta || '').trim().toLowerCase().replace(/\s+/g, '')
-    if (!expressao) return null
+  function rolarDadosPersonalizados() {
+    if (enviandoRolagem || rolagemAtiva) return
 
-    const partes = expressao.split('+').filter((parte) => parte.length > 0)
-    if (!partes.length || partes.length > 10) return null
-
-    const termos = []
-    for (const parte of partes) {
-      const dadoMatch = /^(\d*)d([1-9]\d*)$/.exec(parte)
-      if (dadoMatch) {
-        const qtd = Math.min(20, Math.max(1, Number(dadoMatch[1] || '1')))
-        const lados = Math.min(100, Math.max(2, Number(dadoMatch[2])))
-        termos.push({ tipo: 'dado', qtd, lados })
-        continue
-      }
-
-      const numeroMatch = /^\d+$/.exec(parte)
-      if (numeroMatch) {
-        termos.push({ tipo: 'numero', valor: Math.min(1000, Number(parte)) })
-        continue
-      }
-
-      return null
+    const analise = analisarFormulaDados(dadoInput)
+    if (analise.erro) {
+      setErroAcao(analise.erro)
+      return
     }
 
-    if (!termos.some((termo) => termo.tipo === 'dado')) return null
+    const textoExpressao = formatarFormula(analise.termos)
+    const resultado = rolarTermos(analise.termos)
+    const nomeJogador = personagemAtual?.nome || 'Mestre'
+    const solicitacaoParaConcluir = solicitacaoAtivaId
 
-    return termos
-  }
+    setEnviandoRolagem(true)
+    setDadoAberto(false)
 
-  function rolarTermos(termos) {
-    let total = 0
-    const resultados = []
-    const termosResolvidos = termos.map((termo) => {
-      if (termo.tipo === 'dado') {
-        const valores = Array.from({ length: termo.qtd }, () => Math.floor(Math.random() * termo.lados) + 1)
-        valores.forEach((valor) => resultados.push(valor))
-        total += valores.reduce((soma, valor) => soma + valor, 0)
-        return { ...termo, valores }
-      }
-      total += termo.valor
-      return termo
-    })
-    return { total, resultados, termosResolvidos }
-  }
-
-  function formatarExpressaoDados(termos) {
-    return termos.map((termo) => (termo.tipo === 'dado' ? `${termo.qtd}d${termo.lados}` : `${termo.valor}`)).join('+')
-  }
-
-  function formatarDetalhamentoDados(termosResolvidos) {
-    return (termosResolvidos || [])
-      .map((termo) => (termo.tipo === 'dado' ? `[${termo.valores.join(', ')}]` : `+${termo.valor}`))
-      .join(' ')
-  }
-
-  function rolarDadosPersonalizados() {
-    const termos = analisarExpressaoDados(dadoInput)
-    if (!termos || dadoAnimando) return
-
-    const textoExpressao = formatarExpressaoDados(termos)
-
-    setDadoAnimando(true)
-    const parcial = rolarTermos(termos)
-    setDadoUltimoResultado({
+    setHistoricoDados((atual) => [...atual, {
+      nome: nomeJogador,
       texto: textoExpressao,
-      total: parcial.total,
-      resultados: parcial.resultados,
-      termos: parcial.termosResolvidos,
-    })
+      resultado: resultado.total,
+      dados: resultado.resultados,
+      termos: resultado.termosResolvidos,
+    }].slice(-50))
 
-    window.setTimeout(() => {
-      const final = rolarTermos(termos)
-      const nomeJogador = personagemAtual?.nome || 'Mestre'
+    if (solicitacaoParaConcluir) {
+      setSolicitacaoAtivaId(null)
+      concluirSolicitacaoRolagem(solicitacaoParaConcluir, {
+        resultado_total: resultado.total,
+        resultado_texto: textoExpressao,
+      }).catch((e) => setErroAcao(e.message))
+    }
 
-      setDadoUltimoResultado({
-        texto: textoExpressao,
-        total: final.total,
-        resultados: final.resultados,
-        termos: final.termosResolvidos,
+    const payloadRolagem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      nomeJogador,
+      formula: textoExpressao,
+      termos: resultado.termosResolvidos,
+      total: resultado.total,
+    }
+
+    if (canalRolagemRef.current) {
+      canalRolagemRef.current.enviar(payloadRolagem).catch((e) => {
+        setErroAcao(e.message)
+        setEnviandoRolagem(false)
       })
-      setHistoricoDados((atual) => [...atual, {
-        nome: nomeJogador,
-        texto: textoExpressao,
-        resultado: final.total,
-        dados: final.resultados,
-        termos: final.termosResolvidos,
-      }].slice(-50))
-      setDadoAnimando(false)
-    }, 850)
+    } else {
+      setEnviandoRolagem(false)
+    }
+  }
+
+  async function aoEnviarSolicitacaoRolagem() {
+    if (!solicitarPersonagemId) return
+    setEnviandoSolicitacao(true)
+    try {
+      await criarSolicitacaoRolagem({
+        mundo_id: mundoId,
+        personagem_id: solicitarPersonagemId,
+        tipo: solicitarTipo,
+      })
+      setSolicitarPersonagemId('')
+      setSolicitarAberto(false)
+    } catch (e) {
+      setErroAcao(e.message)
+    } finally {
+      setEnviandoSolicitacao(false)
+    }
+  }
+
+  function aoAceitarSolicitacaoRolagem(solicitacao) {
+    const info = infoTipoSolicitacao(solicitacao.tipo)
+    setDadoInput(info?.dadoPadrao || '1d20')
+    setSolicitacaoAtivaId(solicitacao.id)
+  }
+
+  function aoCancelarSolicitacaoRolagem(id) {
+    cancelarSolicitacaoRolagem(id).catch((e) => setErroAcao(e.message))
   }
 
   function consumirHabilidadeEmAlvo(personagemAlvo) {
@@ -459,6 +585,51 @@ export default function CampaignTablePage() {
   }, [historicoDados])
 
   useEffect(() => {
+    if (!mundoId) return undefined
+
+    async function carregarSolicitacoes() {
+      try {
+        const dados = await listarSolicitacoesRolagem(mundoId)
+        setSolicitacoesRolagem(dados)
+      } catch {
+        // não é crítico para a mesa continuar funcionando
+      }
+    }
+
+    carregarSolicitacoes()
+    const pararDeEscutar = escutarSolicitacoesRolagem(mundoId, carregarSolicitacoes)
+    return pararDeEscutar
+  }, [mundoId])
+
+  useEffect(() => {
+    if (!mundoId) return undefined
+
+    const canal = escutarRolagensDados(mundoId, (payload) => {
+      setRolagemAtiva(payload)
+      setEnviandoRolagem(false)
+    })
+    canalRolagemRef.current = canal
+
+    return () => {
+      canalRolagemRef.current = null
+      canal.parar()
+    }
+  }, [mundoId])
+
+  useEffect(() => {
+    if (solicitacaoPendenteParaMim && ultimaSolicitacaoAvisadaRef.current !== solicitacaoPendenteParaMim.id) {
+      ultimaSolicitacaoAvisadaRef.current = solicitacaoPendenteParaMim.id
+      setDadoAberto(true)
+    }
+  }, [solicitacaoPendenteParaMim])
+
+  useEffect(() => {
+    if (!erroAcao) return undefined
+    const temporizador = window.setTimeout(() => setErroAcao(null), 5000)
+    return () => window.clearTimeout(temporizador)
+  }, [erroAcao])
+
+  useEffect(() => {
     async function carregar() {
       try {
         const mundoAtual = await buscarMundo(mundoId)
@@ -470,6 +641,13 @@ export default function CampaignTablePage() {
         const dados = await listarPersonagens(mundoId)
         setMundo(mundoAtual)
         setPersonagens(dados)
+
+        const listasBarras = await Promise.all(dados.map((personagem) => listarBarras(personagem.id).catch(() => [])))
+        const mapaBarras = {}
+        dados.forEach((personagem, indice) => {
+          mapaBarras[personagem.id] = listasBarras[indice]
+        })
+        setBarrasPorPersonagem(mapaBarras)
 
         const proximoPosicoes = {}
         dados.forEach((personagem, indice) => {
@@ -529,6 +707,7 @@ export default function CampaignTablePage() {
         setHudHabilidades(habilidades)
         setHudAtributos(atributos)
         setHudPericias(pericias)
+        setBarrasPorPersonagem((atual) => ({ ...atual, [personagemAtual.id]: barras }))
       } catch {
         setHudBarras([])
         setHudHabilidades([])
@@ -585,6 +764,15 @@ export default function CampaignTablePage() {
 
   return (
     <div className="campaign-page">
+      {erroAcao && (
+        <div className="campaign-toast-erro">
+          <span>{erroAcao}</span>
+          <button type="button" onClick={() => setErroAcao(null)} aria-label="Fechar aviso">
+            <IconeX className="icone-remover" />
+          </button>
+        </div>
+      )}
+
       <div className="campaign-header">
         <div className="campaign-header-left">
           <p className="campaign-kicker">Campanha ativa</p>
@@ -598,14 +786,35 @@ export default function CampaignTablePage() {
             <div className="campaign-person-summary">
               <span className="campaign-person-label">Personagem em foco</span>
               <strong>{personagemAtual.nome}</strong>
+              {perfilAtual === 'mestre' && (
+                <button
+                  type="button"
+                  className="campaign-hud-toggle"
+                  onClick={() => setHudOculto((atual) => !atual)}
+                >
+                  {hudOculto ? 'Mostrar' : 'Ocultar'}
+                </button>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      <CharacterHud personagem={personagemAtual} barras={hudBarras} habilidades={hudHabilidades} atributos={hudAtributos} pericias={hudPericias} />
+      {!hudOculto && (
+        <CharacterHud
+          personagem={personagemAtual}
+          barras={hudBarras}
+          habilidades={hudHabilidades}
+          atributos={hudAtributos}
+          pericias={hudPericias}
+          podeAlocarProficiencia={perfilAtual === 'mestre' || String(personagemAtual?.id) === String(personagemInicialDoAventureiro)}
+          podeRemoverProficiencia={perfilAtual === 'mestre'}
+          onAtribuirProficiencia={aoAtribuirProficienciaHud}
+          onRemoverProficiencia={aoRemoverProficienciaHud}
+        />
+      )}
 
-      <div className={`campaign-table-scene ${acaoPadraoExpandida ? 'is-blurred' : ''}`}>
+      <div className={`campaign-table-scene ${acaoPadraoExpandida || rolagemAtiva ? 'is-blurred' : ''}`}>
         <div className="campaign-master-strip" title={mundo.mestre}>
           <svg className="campaign-master-icon" viewBox="0 0 64 64" aria-hidden="true">
             <path d="M32 5v10M32 49v10M15 22h34M15 42h34M18 22l-8 10M46 22l8 10M18 42l-8-10M46 42l8-10M20 30h24M20 34h24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.6"/>
@@ -650,73 +859,6 @@ export default function CampaignTablePage() {
         >
           <div className="campaign-map" />
 
-          <div className="campaign-dice-floating">
-            <button
-              type="button"
-              className="campaign-dice-floating__button"
-              aria-label="Abrir rolagem de dados"
-              onClick={() => setDadoAberto((atual) => !atual)}
-            >
-              <img src="/246569.png" alt="Dado de rolagem" className="campaign-dice-floating__image" />
-            </button>
-
-            {dadoAberto && (
-              <div className="campaign-dice-floating__panel">
-                <div className="campaign-dice-floating__header">Rolagem</div>
-                <input
-                  type="text"
-                  value={dadoInput}
-                  onChange={(event) => setDadoInput(event.target.value)}
-                  className="campaign-dice-floating__input"
-                  placeholder="Ex: 2d10+20+30+1d10+6"
-                  aria-label="Rolar dado"
-                />
-
-                <div className="campaign-dice-floating__quick">
-                  {[ '1d20', '2d20', '1d10', '2d10', '1d8', '3d6' ].map((valor) => (
-                    <button
-                      key={valor}
-                      type="button"
-                      className="campaign-dice-floating__quick-button"
-                      onClick={() => setDadoInput(valor)}
-                    >
-                      {valor}
-                    </button>
-                  ))}
-                </div>
-
-                <button
-                  type="button"
-                  className="campaign-dice-floating__roll"
-                  onClick={rolarDadosPersonalizados}
-                  disabled={dadoAnimando}
-                >
-                  {dadoAnimando ? 'Rolando...' : 'Rolar'}
-                </button>
-
-                <div className={`campaign-dice-floating__tray ${dadoAnimando ? 'is-rolling' : ''}`}>
-                  {(dadoUltimoResultado?.resultados || []).map((valor, indice) => (
-                    <div
-                      key={`${dadoUltimoResultado?.texto || 'dado'}-${indice}-${valor}-${dadoAnimando ? 'anim' : 'final'}`}
-                      className={`campaign-dice-floating__die ${dadoAnimando ? 'is-falling' : 'is-landed'}`}
-                      style={{ animationDelay: `${indice * 80}ms` }}
-                    >
-                      <span>{valor}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {dadoUltimoResultado && (
-                  <div className="campaign-dice-floating__result">
-                    <span className="campaign-dice-floating__result-label">{dadoUltimoResultado.texto}</span>
-                    <strong>{dadoUltimoResultado.total}</strong>
-                    <small>{formatarDetalhamentoDados(dadoUltimoResultado.termos)}</small>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
           {personagens.map((personagem, indice) => {
             const pos = posicoes[personagem.id] || POSICOES[indice % POSICOES.length]
             const eSelecionado = personagemAtual && personagem.id === personagemAtual.id
@@ -727,51 +869,220 @@ export default function CampaignTablePage() {
             }
             const posSelecionadoAtual = personagemAtual ? posicoes[personagemAtual.id] : null
             const distancia = eSelecionado && posSelecionadoAtual ? distanciaEmMetros(pos, posSelecionadoAtual) : 0
+            const barraVida = obterBarraVida(personagem.id)
+            const percentualVida = barraVida?.valor_maximo
+              ? clamp((Number(barraVida.valor_atual) / Number(barraVida.valor_maximo)) * 100, 0, 100)
+              : null
             return (
-              <button
+              <div
                 key={personagem.id}
-                type="button"
-                className={`campaign-seat ${habilidadeSelecionada ? 'is-targeting' : ''} ${eSelecionado ? 'is-selected' : ''} ${!permiteMover ? 'is-locked' : ''}`}
+                className="campaign-token"
                 style={{ left: `${posPx.x}px`, top: `${posPx.y}px` }}
                 title={`${personagem.nome}${distancia ? ` • ${distancia.toFixed(1)}m` : ''}`}
-                onPointerDown={(event) => {
-                  if (!permiteMover) return
-                  setDragId(personagem.id)
-                  selecionarPersonagem(personagem)
-                  event.preventDefault()
-                }}
-                onContextMenu={(event) => {
-                  if (!habilidadeSelecionada) return
-                  event.preventDefault()
-                  event.stopPropagation()
-                  cancelarHabilidadeSelecionada()
-                  if (perfilAtual === 'aventureiro' && String(personagem.id) !== String(personagemInicialDoAventureiro)) {
-                    return
-                  }
-                  selecionarPersonagem(personagem)
-                }}
-                onClick={() => {
-                  if (perfilAtual === 'aventureiro' && String(personagem.id) !== String(personagemInicialDoAventureiro)) {
-                    return
-                  }
-                  if (habilidadeSelecionada) return
-                  selecionarPersonagem(personagem)
-                }}
               >
-                {personagem.imagem_url ? (
-                  <img
-                    src={personagem.imagem_url}
-                    alt={personagem.nome}
-                    className="campaign-seat-image"
-                  />
-                ) : (
-                  <span className="campaign-seat-fallback" aria-hidden="true">
-                    {personagem.nome?.charAt(0)?.toUpperCase() || '?'}
-                  </span>
+                <span className="campaign-token__nome">{personagem.nome}</span>
+                <button
+                  type="button"
+                  className={`campaign-seat ${habilidadeSelecionada ? 'is-targeting' : ''} ${eSelecionado ? 'is-selected' : ''} ${!permiteMover ? 'is-locked' : ''}`}
+                  onPointerDown={(event) => {
+                    if (!permiteMover) return
+                    setDragId(personagem.id)
+                    selecionarPersonagem(personagem)
+                    event.preventDefault()
+                  }}
+                  onContextMenu={(event) => {
+                    if (!habilidadeSelecionada) return
+                    event.preventDefault()
+                    event.stopPropagation()
+                    cancelarHabilidadeSelecionada()
+                    if (perfilAtual === 'aventureiro' && String(personagem.id) !== String(personagemInicialDoAventureiro)) {
+                      return
+                    }
+                    selecionarPersonagem(personagem)
+                  }}
+                  onClick={() => {
+                    if (perfilAtual === 'aventureiro' && String(personagem.id) !== String(personagemInicialDoAventureiro)) {
+                      return
+                    }
+                    if (habilidadeSelecionada) return
+                    selecionarPersonagem(personagem)
+                  }}
+                >
+                  {personagem.imagem_url ? (
+                    <img
+                      src={personagem.imagem_url}
+                      alt={personagem.nome}
+                      className="campaign-seat-image"
+                    />
+                  ) : (
+                    <span className="campaign-seat-fallback" aria-hidden="true">
+                      {personagem.nome?.charAt(0)?.toUpperCase() || '?'}
+                    </span>
+                  )}
+                </button>
+                {percentualVida !== null && (
+                  <div className="campaign-token__vida" title={`Vida: ${barraVida.valor_atual}/${barraVida.valor_maximo}`}>
+                    <div className="campaign-token__vida-preenchimento" style={{ width: `${percentualVida}%` }} />
+                  </div>
                 )}
-              </button>
+              </div>
             )
           })}
+        </div>
+
+        <div className="campaign-dice-floating">
+          <button
+            type="button"
+            className="campaign-dice-floating__button"
+            aria-label="Abrir rolagem de dados"
+            onClick={() => setDadoAberto((atual) => !atual)}
+          >
+            <img src="/246569.png" alt="Dado de rolagem" className="campaign-dice-floating__image" />
+            {solicitacaoPendenteParaMim && <span className="campaign-dice-floating__badge" aria-hidden="true" />}
+          </button>
+
+          {dadoAberto && (
+            <div className="campaign-dice-floating__panel">
+              <div className="campaign-dice-floating__header-row">
+                <div className="campaign-dice-floating__header">Rolagem</div>
+                {perfilAtual === 'mestre' && (
+                  <button
+                    type="button"
+                    className="campaign-dice-floating__solicitar-toggle"
+                    onClick={() => setSolicitarAberto((atual) => !atual)}
+                  >
+                    Solicitar
+                  </button>
+                )}
+              </div>
+
+              {solicitarAberto && (
+                <div className="campaign-dice-solicitar">
+                  <label className="campaign-dice-solicitar__campo">
+                    <span>Jogador</span>
+                    <select
+                      value={solicitarPersonagemId}
+                      onChange={(event) => setSolicitarPersonagemId(event.target.value)}
+                    >
+                      <option value="">Selecione...</option>
+                      {personagens.map((personagem) => (
+                        <option key={personagem.id} value={personagem.id}>{personagem.nome}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="campaign-dice-solicitar__tipos">
+                    {TIPOS_SOLICITACAO_ROLAGEM.map((tipo) => (
+                      <button
+                        key={tipo.valor}
+                        type="button"
+                        className={`campaign-dice-solicitar__tipo-botao ${solicitarTipo === tipo.valor ? 'is-selecionado' : ''}`}
+                        onClick={() => setSolicitarTipo(tipo.valor)}
+                      >
+                        {tipo.rotulo}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="campaign-dice-solicitar__enviar"
+                    disabled={!solicitarPersonagemId || enviandoSolicitacao}
+                    onClick={aoEnviarSolicitacaoRolagem}
+                  >
+                    {enviandoSolicitacao ? 'Enviando...' : 'Enviar solicitação'}
+                  </button>
+                </div>
+              )}
+
+              {perfilAtual === 'mestre' && solicitacoesRolagem.length > 0 && (
+                <div className="campaign-dice-solicitacoes-lista">
+                  {solicitacoesRolagem.slice(0, 5).map((solicitacao) => {
+                    const personagemAlvo = personagens.find((item) => String(item.id) === String(solicitacao.personagem_id))
+                    const info = infoTipoSolicitacao(solicitacao.tipo)
+                    return (
+                      <div key={solicitacao.id} className={`campaign-dice-solicitacoes-item is-${solicitacao.status}`}>
+                        <span className="campaign-dice-solicitacoes-item__info">
+                          <span className="campaign-dice-solicitacoes-item__nome">{personagemAlvo?.nome || '???'}</span>
+                          <span className="campaign-dice-solicitacoes-item__tipo">{info?.rotulo || solicitacao.tipo}</span>
+                        </span>
+                        {solicitacao.status === 'pendente' && (
+                          <span className="campaign-dice-solicitacoes-item__acoes">
+                            <span className="campaign-dice-solicitacoes-item__status">Aguardando...</span>
+                            <button
+                              type="button"
+                              className="campaign-dice-solicitacoes-item__cancelar"
+                              title="Cancelar solicitação"
+                              onClick={() => aoCancelarSolicitacaoRolagem(solicitacao.id)}
+                            >
+                              <IconeX className="icone-remover" />
+                            </button>
+                          </span>
+                        )}
+                        {solicitacao.status === 'concluida' && (
+                          <span className="campaign-dice-solicitacoes-item__resultado">
+                            {solicitacao.resultado_texto}: <strong>{solicitacao.resultado_total}</strong>
+                          </span>
+                        )}
+                        {solicitacao.status === 'cancelada' && (
+                          <span className="campaign-dice-solicitacoes-item__status">Cancelada</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {solicitacaoPendenteParaMim && solicitacaoAtivaId !== solicitacaoPendenteParaMim.id && (
+                <div className="campaign-dice-solicitacao-pendente">
+                  <span>O Mestre pediu: <strong>{infoTipoSolicitacao(solicitacaoPendenteParaMim.tipo)?.rotulo}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => aoAceitarSolicitacaoRolagem(solicitacaoPendenteParaMim)}
+                  >
+                    Preencher
+                  </button>
+                </div>
+              )}
+
+              <input
+                type="text"
+                value={dadoInput}
+                onChange={(event) => setDadoInput(event.target.value)}
+                className="campaign-dice-floating__input"
+                placeholder="Ex: 2d10+20+30+1d10+6"
+                aria-label="Rolar dado"
+              />
+
+              <div className="campaign-dice-floating__quick">
+                {[ '1d20', '2d20', '1d10', '2d10', '1d8', '3d6' ].map((valor) => (
+                  <button
+                    key={valor}
+                    type="button"
+                    className="campaign-dice-floating__quick-button"
+                    onClick={() => setDadoInput(valor)}
+                  >
+                    {valor}
+                  </button>
+                ))}
+              </div>
+
+              <DiceIdlePreview formula={dadoInput} />
+
+              {solicitacaoAtivaId && (
+                <div className="campaign-dice-solicitacao-ativa">Essa rolagem será enviada ao Mestre.</div>
+              )}
+
+              <button
+                type="button"
+                className="campaign-dice-floating__roll"
+                onClick={rolarDadosPersonalizados}
+                disabled={enviandoRolagem || !!rolagemAtiva}
+              >
+                {enviandoRolagem || rolagemAtiva ? 'Rolando...' : 'Rolar'}
+              </button>
+            </div>
+          )}
         </div>
 
         {acaoPadraoExpandida && (
@@ -808,6 +1119,14 @@ export default function CampaignTablePage() {
               )}
             </div>
           </div>
+        )}
+
+        {rolagemAtiva && (
+          <DiceRoller3D
+            key={rolagemAtiva.id}
+            rolagem={rolagemAtiva}
+            onFechar={() => setRolagemAtiva(null)}
+          />
         )}
       </div>
 

@@ -109,10 +109,17 @@ export async function buscarPersonagem(id) {
   return data
 }
 
-export async function criarPersonagem({ nome, genero, imagem_url, nivel = 1, mundo_id = null, atributos, barras, pericias }) {
+export async function criarPersonagem({ nome, genero, imagem_url, nivel = 1, mundo_id = null, atributos, barras, pericias, pontos_proficiencia = 2 }) {
   const { data, error } = await supabase
     .from('personagens')
-    .insert({ nome, genero, imagem_url, nivel: Number(nivel) || 1, mundo_id: mundo_id ?? null })
+    .insert({
+      nome,
+      genero,
+      imagem_url,
+      nivel: Number(nivel) || 1,
+      mundo_id: mundo_id ?? null,
+      pontos_proficiencia: Math.max(0, Number(pontos_proficiencia) || 0),
+    })
     .select()
     .single()
   if (error) throw error
@@ -151,6 +158,7 @@ export async function criarPersonagem({ nome, genero, imagem_url, nivel = 1, mun
           atributo: pericia.atributo,
           nome: pericia.nome,
           valor: calcularValorPericia(valorAtributo),
+          proficiente: Boolean(pericia.proficiente),
           ordem: i,
         }
       })
@@ -411,4 +419,89 @@ export function escutarMudancasListaPersonagens(aoMudar, mundoId = null) {
     .subscribe()
 
   return () => supabase.removeChannel(canal)
+}
+
+// ---------- Solicitações de rolagem ----------
+
+// O Mestre pede uma rolagem específica a um jogador; o jogador vê o pedido
+// e, ao rolar, o resultado volta para o Mestre. Tudo via realtime.
+export const TIPOS_SOLICITACAO_ROLAGEM = [
+  { valor: 'acerto', rotulo: 'Rolagem de acerto', dadoPadrao: '1d20' },
+  { valor: 'pericia', rotulo: 'Rolagem de Perícia', dadoPadrao: '1d20' },
+  { valor: 'dano', rotulo: 'Rolagem de dano', dadoPadrao: '1d6' },
+]
+
+export async function criarSolicitacaoRolagem({ mundo_id, personagem_id, tipo }) {
+  const { data, error } = await supabase
+    .from('solicitacoes_rolagem')
+    .insert({ mundo_id, personagem_id, tipo })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function listarSolicitacoesRolagem(mundoId) {
+  const { data, error } = await supabase
+    .from('solicitacoes_rolagem')
+    .select('*')
+    .eq('mundo_id', mundoId)
+    .order('criado_em', { ascending: false })
+  if (error) throw error
+  return data
+}
+
+export async function concluirSolicitacaoRolagem(id, { resultado_total, resultado_texto }) {
+  const { error } = await supabase
+    .from('solicitacoes_rolagem')
+    .update({
+      status: 'concluida',
+      resultado_total,
+      resultado_texto,
+      concluido_em: new Date().toISOString(),
+    })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function cancelarSolicitacaoRolagem(id) {
+  const { error } = await supabase
+    .from('solicitacoes_rolagem')
+    .update({ status: 'cancelada' })
+    .eq('id', id)
+  if (error) throw error
+}
+
+export function escutarSolicitacoesRolagem(mundoId, aoMudar) {
+  const canal = supabase
+    .channel(`solicitacoes-rolagem-${mundoId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'solicitacoes_rolagem', filter: `mundo_id=eq.${mundoId}` },
+      aoMudar
+    )
+    .subscribe()
+
+  return () => supabase.removeChannel(canal)
+}
+
+// ---------- Rolagens de dados (broadcast em tempo real) ----------
+
+// A animação 3D de uma rolagem precisa ser vista igual por todo mundo
+// conectado na mesa, não só por quem rolou. Como isso é um evento efêmero
+// (o resultado final já fica salvo em historicoDados local e, quando é uma
+// solicitação, em solicitacoes_rolagem), usamos "broadcast" do Realtime em
+// vez de gravar em tabela: nenhuma linha de banco por rolagem, latência menor.
+// self:true faz o próprio cliente que rolou também receber o evento, então
+// todo mundo (incluindo quem rolou) reage exatamente do mesmo jeito.
+export function escutarRolagensDados(mundoId, aoReceberRolagem) {
+  const canal = supabase
+    .channel(`rolagens-dados-${mundoId}`, { config: { broadcast: { self: true } } })
+    .on('broadcast', { event: 'rolagem' }, (mensagem) => aoReceberRolagem(mensagem.payload))
+    .subscribe()
+
+  return {
+    enviar: (payload) => canal.send({ type: 'broadcast', event: 'rolagem', payload }),
+    parar: () => supabase.removeChannel(canal),
+  }
 }

@@ -32,8 +32,20 @@ create table if not exists public.personagens (
   genero text not null default 'Elu' check (genero in ('Ele', 'Ela', 'Elu')),
   nivel integer not null default 1,
   imagem_url text,
+  pontos_proficiencia integer not null default 2,
   criado_em timestamp with time zone default now()
 );
+
+alter table if exists public.personagens
+  add column if not exists pontos_proficiencia integer default 2;
+
+update public.personagens
+set pontos_proficiencia = 2
+where pontos_proficiencia is null;
+
+alter table if exists public.personagens
+  alter column pontos_proficiencia set not null,
+  alter column pontos_proficiencia set default 2;
 
 -- Atributos
 create table if not exists public.atributos (
@@ -61,8 +73,20 @@ create table if not exists public.pericias (
   atributo text not null,
   nome text not null,
   valor integer not null default 0,
+  proficiente boolean not null default false,
   ordem integer not null default 0
 );
+
+alter table if exists public.pericias
+  add column if not exists proficiente boolean default false;
+
+update public.pericias
+set proficiente = false
+where proficiente is null;
+
+alter table if exists public.pericias
+  alter column proficiente set not null,
+  alter column proficiente set default false;
 
 -- Habilidades (campo seguro para versões novas e legadas)
 create table if not exists public.habilidades (
@@ -106,6 +130,19 @@ alter table if exists public.habilidades
   alter column tipo set default 'ativa',
   alter column tipo set not null;
 
+-- Solicitações de rolagem (Mestre pede uma rolagem específica a um jogador)
+create table if not exists public.solicitacoes_rolagem (
+  id uuid primary key default uuid_generate_v4(),
+  mundo_id uuid references mundos(id) on delete cascade not null,
+  personagem_id uuid references personagens(id) on delete cascade not null,
+  tipo text not null check (tipo in ('acerto', 'pericia', 'dano')),
+  status text not null default 'pendente' check (status in ('pendente', 'concluida', 'cancelada')),
+  resultado_total integer,
+  resultado_texto text,
+  criado_em timestamp with time zone default now(),
+  concluido_em timestamp with time zone
+);
+
 -- RLS
 alter table if exists mundos enable row level security;
 alter table if exists personagens enable row level security;
@@ -113,6 +150,7 @@ alter table if exists atributos enable row level security;
 alter table if exists barras_status enable row level security;
 alter table if exists pericias enable row level security;
 alter table if exists habilidades enable row level security;
+alter table if exists solicitacoes_rolagem enable row level security;
 
 drop policy if exists "acesso_total_mundos" on mundos;
 drop policy if exists "acesso_total_personagens" on personagens;
@@ -120,6 +158,7 @@ drop policy if exists "acesso_total_atributos" on atributos;
 drop policy if exists "acesso_total_barras" on barras_status;
 drop policy if exists "acesso_total_pericias" on pericias;
 drop policy if exists "acesso_total_habilidades" on habilidades;
+drop policy if exists "acesso_total_solicitacoes_rolagem" on solicitacoes_rolagem;
 
 create policy "acesso_total_mundos" on mundos for all using (true) with check (true);
 create policy "acesso_total_personagens" on personagens for all using (true) with check (true);
@@ -127,11 +166,47 @@ create policy "acesso_total_atributos" on atributos for all using (true) with ch
 create policy "acesso_total_barras" on barras_status for all using (true) with check (true);
 create policy "acesso_total_pericias" on pericias for all using (true) with check (true);
 create policy "acesso_total_habilidades" on habilidades for all using (true) with check (true);
+create policy "acesso_total_solicitacoes_rolagem" on solicitacoes_rolagem for all using (true) with check (true);
 
 -- Realtime
-alter publication supabase_realtime add table if not exists mundos;
-alter publication supabase_realtime add table if not exists personagens;
-alter publication supabase_realtime add table if not exists atributos;
-alter publication supabase_realtime add table if not exists barras_status;
-alter publication supabase_realtime add table if not exists pericias;
-alter publication supabase_realtime add table if not exists habilidades;
+do $$
+begin
+  alter publication supabase_realtime add table mundos;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table personagens;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table atributos;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table barras_status;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table pericias;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table habilidades;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table solicitacoes_rolagem;
+exception when duplicate_object then null;
+end $$;

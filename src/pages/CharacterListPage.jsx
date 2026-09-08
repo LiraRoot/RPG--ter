@@ -21,7 +21,7 @@ export default function CharacterListPage() {
   })
 
   const perfil = window.sessionStorage.getItem(PERFIL_KEY)
-  const ehAventureiro = perfil === 'aventureiro'
+  const podeEditarPersonagens = perfil === 'aventureiro' || perfil === 'mestre'
 
   useEffect(() => {
     carregar()
@@ -92,7 +92,7 @@ export default function CharacterListPage() {
 
           return (
             <div key={p.id} className={`card-personagem character-card ${estaSelecionado ? 'is-selected' : ''}`}>
-              {ehAventureiro && (
+              {podeEditarPersonagens && (
                 <button
                   type="button"
                   className="character-edit-button"

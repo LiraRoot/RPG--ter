@@ -188,7 +188,7 @@ export default function CharacterSheetPage() {
 
   useEffect(() => {
     const perfil = window.sessionStorage.getItem(PERFIL_KEY)
-    if (perfil !== 'aventureiro') {
+    if (perfil !== 'aventureiro' && perfil !== 'mestre') {
       navegar('/')
     }
   }, [navegar])
@@ -298,6 +298,49 @@ export default function CharacterSheetPage() {
     agendarAtualizacao(`pericia-${perId}`, () => atualizarPericia(perId, campos))
   }, [agendarAtualizacao, atualizarListaLocal])
 
+  const aoAtribuirProficiencia = useCallback(async (periciaId) => {
+    const pontosAtuais = personagem?.pontos_proficiencia ?? 0
+    const pericia = pericias.find((item) => item.id === periciaId)
+    if (!pericia || pericia.proficiente || pontosAtuais <= 0) return
+
+    const novosPontos = pontosAtuais - 1
+    ignorarAtualizacaoRemota.current = true
+    setPersonagem((atual) => ({ ...atual, pontos_proficiencia: novosPontos }))
+    atualizarListaLocal(setPericias, periciaId, { proficiente: true })
+
+    try {
+      await Promise.all([
+        atualizarPericia(periciaId, { proficiente: true }),
+        atualizarPersonagem(id, { pontos_proficiencia: novosPontos }),
+      ])
+    } catch (e) {
+      setErro(e.message)
+    } finally {
+      ignorarAtualizacaoRemota.current = false
+    }
+  }, [id, personagem, pericias, atualizarListaLocal])
+
+  const aoRemoverProficiencia = useCallback(async (periciaId) => {
+    const pericia = pericias.find((item) => item.id === periciaId)
+    if (!pericia || !pericia.proficiente) return
+
+    const novosPontos = (personagem?.pontos_proficiencia ?? 0) + 1
+    ignorarAtualizacaoRemota.current = true
+    setPersonagem((atual) => ({ ...atual, pontos_proficiencia: novosPontos }))
+    atualizarListaLocal(setPericias, periciaId, { proficiente: false })
+
+    try {
+      await Promise.all([
+        atualizarPericia(periciaId, { proficiente: false }),
+        atualizarPersonagem(id, { pontos_proficiencia: novosPontos }),
+      ])
+    } catch (e) {
+      setErro(e.message)
+    } finally {
+      ignorarAtualizacaoRemota.current = false
+    }
+  }, [id, personagem, pericias, atualizarListaLocal])
+
   async function aoTrocarImagem(e) {
     const arquivo = e.target.files[0]
     if (!arquivo) return
@@ -313,7 +356,7 @@ export default function CharacterSheetPage() {
   }
 
   const perfilAtual = window.sessionStorage.getItem(PERFIL_KEY)
-  if (perfilAtual !== 'aventureiro') return <p>Somente aventureiros podem editar personagens.</p>
+  if (perfilAtual !== 'aventureiro' && perfilAtual !== 'mestre') return <p>Somente aventureiros e mestres podem editar personagens.</p>
 
   if (carregando) return <p>Carregando ficha...</p>
   if (erro) return <p>Erro ao carregar: {erro}</p>
@@ -402,6 +445,10 @@ export default function CharacterSheetPage() {
         onAtualizarPericia={aoAtualizarPericia}
         onRemover={(attrId) => removerAtributo(attrId).then(carregarTudo)}
         onRemoverPericia={(perId) => removerPericia(perId).then(carregarTudo)}
+        pontosProficiencia={personagem.pontos_proficiencia ?? 0}
+        podeRemoverProficiencia={perfilAtual === 'mestre'}
+        onAtribuirProficiencia={aoAtribuirProficiencia}
+        onRemoverProficiencia={aoRemoverProficiencia}
       />
 
       <AbilityList

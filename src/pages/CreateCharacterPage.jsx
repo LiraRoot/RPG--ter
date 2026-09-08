@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ATRIBUTOS_PADRAO, BARRAS_PADRAO, PERICIAS_PADRAO, calcularValorPericia, criarPersonagem, enviarImagemPersonagem } from '../lib/api'
+import AttributeList from '../components/AttributeList'
 
 function criarEstadoPadraoAtributos() {
-  return ATRIBUTOS_PADRAO.map((nome) => ({ nome, valor: 0 }))
+  return ATRIBUTOS_PADRAO.map((nome) => ({ id: crypto.randomUUID(), nome, valor: 0 }))
 }
 
 function criarEstadoPadraoBarras() {
@@ -16,9 +17,11 @@ function criarEstadoPadraoBarras() {
 
 function criarEstadoPadraoPericias() {
   return Object.entries(PERICIAS_PADRAO).flatMap(([atributo, nomes]) =>
-    nomes.map((nome) => ({ atributo, nome, valor: 0 }))
+    nomes.map((nome) => ({ id: crypto.randomUUID(), atributo, nome, valor: 0, proficiente: false }))
   )
 }
+
+const PONTOS_PROFICIENCIA_INICIAIS = 2
 
 export default function CreateCharacterPage() {
   const [nome, setNome] = useState('')
@@ -34,16 +37,16 @@ export default function CreateCharacterPage() {
   const { mundoId } = useParams()
   const navegar = useNavigate()
 
-  function atualizarAtributo(index, campo, valor) {
-    setAtributos((prev) => prev.map((item, i) => i === index ? { ...item, [campo]: valor } : item))
+  function atualizarAtributo(id, campos) {
+    setAtributos((prev) => prev.map((item) => item.id === id ? { ...item, ...campos } : item))
   }
 
-  function adicionarAtributo() {
-    setAtributos((prev) => [...prev, { nome: `Novo atributo ${prev.length + 1}`, valor: 0 }])
+  function adicionarAtributo(nome) {
+    setAtributos((prev) => [...prev, { id: crypto.randomUUID(), nome: nome || `Novo atributo ${prev.length + 1}`, valor: 0 }])
   }
 
-  function removerAtributo(index) {
-    setAtributos((prev) => prev.filter((_, i) => i !== index))
+  function removerAtributo(id) {
+    setAtributos((prev) => prev.filter((item) => item.id !== id))
   }
 
   function atualizarBarra(index, campo, valor) {
@@ -58,12 +61,12 @@ export default function CreateCharacterPage() {
     setBarras((prev) => prev.filter((_, i) => i !== index))
   }
 
-  function adicionarPericiaParaAtributo(atributo) {
-    setPericias((prev) => [...prev, { atributo, nome: 'Nova perícia', valor: 0 }])
+  function adicionarPericiaParaAtributo(atributo, nome) {
+    setPericias((prev) => [...prev, { id: crypto.randomUUID(), atributo, nome: nome || 'Nova perícia', valor: 0, proficiente: false }])
   }
 
-  function atualizarPericia(index, campo, valor) {
-    setPericias((prev) => prev.map((item, i) => i === index ? { ...item, [campo]: valor } : item))
+  function atualizarPericia(id, campos) {
+    setPericias((prev) => prev.map((item) => item.id === id ? { ...item, ...campos } : item))
   }
 
   function obterValorPericiaAtual(atributoNome) {
@@ -71,8 +74,22 @@ export default function CreateCharacterPage() {
     return calcularValorPericia(atributo?.valor ?? 0)
   }
 
-  function removerPericia(index) {
-    setPericias((prev) => prev.filter((_, i) => i !== index))
+  function removerPericia(id) {
+    setPericias((prev) => prev.filter((item) => item.id !== id))
+  }
+
+  const pontosProficienciaDisponiveis = PONTOS_PROFICIENCIA_INICIAIS - pericias.filter((pericia) => pericia.proficiente).length
+
+  function atribuirProficiencia(id) {
+    setPericias((prev) => {
+      const alvo = prev.find((item) => item.id === id)
+      if (!alvo || alvo.proficiente || pontosProficienciaDisponiveis <= 0) return prev
+      return prev.map((item) => item.id === id ? { ...item, proficiente: true } : item)
+    })
+  }
+
+  function removerProficiencia(id) {
+    setPericias((prev) => prev.map((item) => item.id === id ? { ...item, proficiente: false } : item))
   }
 
   async function aoSalvar(e) {
@@ -98,6 +115,7 @@ export default function CreateCharacterPage() {
         atributos,
         barras,
         pericias: periciasComValorCalculado,
+        pontos_proficiencia: pontosProficienciaDisponiveis,
       })
 
       if (mundoId) {
@@ -165,58 +183,20 @@ export default function CreateCharacterPage() {
           </div>
         </div>
 
-        <section className="secao secao-criacao">
-          <h2>Atributos</h2>
-          {atributos.map((atributo, index) => {
-            const periciasDoAtributo = pericias.filter((pericia) => pericia.atributo === atributo.nome)
-
-            return (
-              <div key={`${atributo.nome}-${index}`} className="criacao-atributo-bloco">
-                <div className="criacao-linha criacao-linha-principal">
-                  <input
-                    value={atributo.nome}
-                    onChange={(e) => atualizarAtributo(index, 'nome', e.target.value)}
-                  />
-                  <input
-                    type="number"
-                    value={atributo.valor}
-                    onChange={(e) => atualizarAtributo(index, 'valor', Number(e.target.value))}
-                  />
-                  <button type="button" className="botao-remover" onClick={() => removerAtributo(index)}>
-                    remover
-                  </button>
-                </div>
-
-                <div className="criacao-pericias">
-                  {periciasDoAtributo.map((pericia, periciaIndex) => {
-                    const realIndex = pericias.findIndex((item) => item === pericia)
-                    return (
-                      <div key={`${pericia.atributo}-${pericia.nome}-${periciaIndex}`} className="criacao-linha criacao-linha-pericia">
-                        <input
-                          value={pericia.nome}
-                          onChange={(e) => atualizarPericia(realIndex, 'nome', e.target.value)}
-                        />
-                        <input
-                          type="number"
-                          value={obterValorPericiaAtual(atributo.nome)}
-                          readOnly
-                        />
-                        <button type="button" className="botao-remover" onClick={() => removerPericia(realIndex)}>
-                          remover
-                        </button>
-                      </div>
-                    )
-                  })}
-
-                  <button type="button" className="botao-adicionar-pericia" onClick={() => adicionarPericiaParaAtributo(atributo.nome)}>
-                    + perícia
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-          <button type="button" onClick={adicionarAtributo}>+ atributo</button>
-        </section>
+        <AttributeList
+          atributos={atributos}
+          pericias={pericias}
+          onAdicionar={adicionarAtributo}
+          onAdicionarPericia={adicionarPericiaParaAtributo}
+          onAtualizar={atualizarAtributo}
+          onAtualizarPericia={atualizarPericia}
+          onRemover={removerAtributo}
+          onRemoverPericia={removerPericia}
+          pontosProficiencia={pontosProficienciaDisponiveis}
+          podeRemoverProficiencia
+          onAtribuirProficiencia={atribuirProficiencia}
+          onRemoverProficiencia={removerProficiencia}
+        />
 
         <section className="secao secao-criacao">
           <h2>Barras de status</h2>
