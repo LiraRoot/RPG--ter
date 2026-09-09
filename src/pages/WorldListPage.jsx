@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { IMAGEM_MUNDO_PADRAO, listarMundos, atualizarMundo } from '../lib/api'
 
@@ -14,11 +14,7 @@ export default function WorldListPage() {
   const mestreAtual = window.sessionStorage.getItem(MESTRE_ATUAL_KEY) || ''
   const ehMestre = perfil === 'mestre' && !!mestreAtual.trim()
 
-  useEffect(() => {
-    carregar()
-  }, [])
-
-  async function carregar() {
+  const carregar = useCallback(async () => {
     try {
       const dados = await listarMundos()
       setMundos(dados)
@@ -27,7 +23,11 @@ export default function WorldListPage() {
     } finally {
       setCarregando(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    carregar()
+  }, [carregar])
 
   async function alternarCampanha(mundoId, campanhaAtiva) {
     try {

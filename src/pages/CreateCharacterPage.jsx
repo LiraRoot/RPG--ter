@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ATRIBUTOS_PADRAO, BARRAS_PADRAO, PERICIAS_PADRAO, calcularValorPericia, criarPersonagem, enviarImagemPersonagem } from '../lib/api'
 import AttributeList from '../components/AttributeList'
@@ -36,6 +36,14 @@ export default function CreateCharacterPage() {
   const [erro, setErro] = useState(null)
   const { mundoId } = useParams()
   const navegar = useNavigate()
+
+  // Libera a URL temporária da pré-visualização quando ela é trocada por
+  // outra ou quando o formulário é fechado, pra não vazar memória.
+  useEffect(() => {
+    return () => {
+      if (previewImagem) URL.revokeObjectURL(previewImagem)
+    }
+  }, [previewImagem])
 
   function atualizarAtributo(id, campos) {
     setAtributos((prev) => prev.map((item) => item.id === id ? { ...item, ...campos } : item))

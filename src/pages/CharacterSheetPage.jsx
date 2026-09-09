@@ -5,6 +5,7 @@ import {
   atualizarPersonagem,
   excluirPersonagem,
   enviarImagemPersonagem,
+  calcularValorPericia,
   listarAtributos,
   adicionarAtributo,
   atualizarAtributo,
@@ -282,12 +283,6 @@ export default function CharacterSheetPage() {
     agendarAtualizacao(`barra-${barraId}`, () => atualizarBarra(barraId, campos))
   }, [agendarAtualizacao, atualizarListaLocal])
 
-  const normalizarNumeroInput = useCallback((valor) => {
-    if (valor === '' || valor === null || valor === undefined) return 0
-    const numero = Number(valor)
-    return Number.isFinite(numero) ? numero : 0
-  }, [])
-
   const aoAtualizarHabilidade = useCallback((habId, campos) => {
     atualizarListaLocal(setHabilidades, habId, campos)
     agendarAtualizacao(`habilidade-${habId}`, () => atualizarHabilidade(habId, campos))
@@ -446,7 +441,7 @@ export default function CharacterSheetPage() {
         onRemover={(attrId) => removerAtributo(attrId).then(carregarTudo)}
         onRemoverPericia={(perId) => removerPericia(perId).then(carregarTudo)}
         pontosProficiencia={personagem.pontos_proficiencia ?? 0}
-        podeRemoverProficiencia={perfilAtual === 'mestre'}
+        podeRemoverProficiencia={perfilAtual === 'mestre' || perfilAtual === 'aventureiro'}
         onAtribuirProficiencia={aoAtribuirProficiencia}
         onRemoverProficiencia={aoRemoverProficiencia}
       />

@@ -7,19 +7,29 @@ import {
   buscarMundo,
   cancelarSolicitacaoRolagem,
   concluirSolicitacaoRolagem,
+  criarDesenhoMapa,
   criarSolicitacaoRolagem,
+  escutarBarrasStatus,
+  escutarDesenhosMapa,
+  escutarMudancasPersonagem,
+  escutarMudancasListaPersonagens,
   escutarRolagensDados,
   escutarSolicitacoesRolagem,
+  limparDesenhosMapa,
   listarAtributos,
   listarBarras,
+  listarDesenhosMapa,
   listarHabilidades,
   listarPericias,
   listarPersonagens,
   listarSolicitacoesRolagem,
+  removerDesenhoMapa,
 } from '../lib/api'
 import { analisarFormulaDados, formatarDetalhamentoDados, formatarFormula, rolarTermos } from '../lib/dados'
 import DiceRoller3D from '../components/DiceRoller3D'
 import DiceIdlePreview from '../components/DiceIdlePreview'
+import InventoryPanel from '../components/InventoryPanel'
+import NotepadPanel from '../components/NotepadPanel'
 
 const PERSONAGEM_SELECIONADO_KEY = 'rpg-personagem-selecionado'
 
@@ -40,7 +50,31 @@ function IconeX({ className }) {
   )
 }
 
-const GRID_SIZE = 32
+function IconeMochila({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M9 2a1 1 0 0 0-1 1v1.05A5.002 5.002 0 0 0 4 9v9a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4V9a5.002 5.002 0 0 0-4-4.95V3a1 1 0 0 0-1-1H9Zm1 2h4v1h-4V4ZM6 9a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v1H6V9Zm0 3h12v6a2 2 0 0 1-2 2h-1v-4a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1v4H8a2 2 0 0 1-2-2v-6Z" />
+    </svg>
+  )
+}
+
+function IconeLapis({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25ZM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z" />
+    </svg>
+  )
+}
+
+function IconeCaderno({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5Zm0 2h2v14H5V5Zm4 0h10v14H9V5Zm1 3v1.5h8V8h-8Zm0 3v1.5h8V11h-8Zm0 3v1.5h6V14h-6Z" />
+    </svg>
+  )
+}
+
+const GRID_SIZE = 80
 
 const POSICOES = [
   { x: 4, y: 8 },
@@ -354,6 +388,13 @@ export default function CampaignTablePage() {
   const [rolagemAtiva, setRolagemAtiva] = useState(null)
   const [enviandoRolagem, setEnviandoRolagem] = useState(false)
   const canalRolagemRef = useRef(null)
+  const [inventarioAberto, setInventarioAberto] = useState(false)
+  const [notasAberto, setNotasAberto] = useState(false)
+  const [desenhoAtivo, setDesenhoAtivo] = useState(false)
+  const [desenhos, setDesenhos] = useState([])
+  const [pontosAtuais, setPontosAtuais] = useState([])
+  const desenhoAtualRef = useRef([])
+  const desenhandoRef = useRef(false)
 
   const perfilAtual = (() => {
     try {
@@ -382,7 +423,6 @@ export default function CampaignTablePage() {
   function infoTipoSolicitacao(tipo) {
     return TIPOS_SOLICITACAO_ROLAGEM.find((item) => item.valor === tipo)
   }
-  const turnoAtual = personagens.find((personagem) => String(personagem.id) === String(turnoAtualId)) || personagens[0] || null
   const indiceTurnoAtual = ordemTurnos.findIndex((id) => String(id) === String(turnoAtualId))
   const proximaPersonagemDoTurno = (() => {
     if (!ordemTurnos.length || indiceTurnoAtual < 0) return personagens[0] || null
@@ -441,6 +481,64 @@ export default function CampaignTablePage() {
   function obterBarraVida(personagemId) {
     const barras = barrasPorPersonagem[personagemId] || []
     return barras.find((barra) => String(barra.nome || '').toLowerCase() === 'vida') || null
+  }
+
+  function obterPontoDoEvento(event) {
+    const mesa = mesaRef.current
+    if (!mesa) return null
+    const rect = mesa.getBoundingClientRect()
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+  }
+
+  function aoPressionarParaDesenhar(event) {
+    if (!desenhoAtivo) return
+    const ponto = obterPontoDoEvento(event)
+    if (!ponto) return
+    desenhandoRef.current = true
+    desenhoAtualRef.current = [ponto]
+    setPontosAtuais([ponto])
+    event.preventDefault()
+  }
+
+  function aoMoverParaDesenhar(event) {
+    if (!desenhoAtivo || !desenhandoRef.current) return
+    const ponto = obterPontoDoEvento(event)
+    if (!ponto) return
+    desenhoAtualRef.current = [...desenhoAtualRef.current, ponto]
+    setPontosAtuais(desenhoAtualRef.current)
+  }
+
+  async function aoSoltarParaDesenhar() {
+    if (!desenhandoRef.current) return
+    desenhandoRef.current = false
+    const pontosFinais = desenhoAtualRef.current
+    desenhoAtualRef.current = []
+
+    if (pontosFinais.length <= 1) {
+      setPontosAtuais([])
+      return
+    }
+
+    try {
+      // Mantém o traço em preview até o desenho confirmado entrar na lista,
+      // pra não sumir por 1s enquanto espera a volta do servidor (piscada).
+      const novoDesenho = await criarDesenhoMapa({ mundo_id: mundoId, pontos: pontosFinais, cor: '#000000', espessura: 3 })
+      setDesenhos((atual) => (atual.some((d) => d.id === novoDesenho.id) ? atual : [...atual, novoDesenho]))
+    } catch (e) {
+      setErroAcao(e.message)
+    } finally {
+      setPontosAtuais([])
+    }
+  }
+
+  function aoLimparDesenhos() {
+    limparDesenhosMapa(mundoId).catch((e) => setErroAcao(e.message))
+  }
+
+  function aoDesfazerUltimoDesenho() {
+    const ultimo = desenhos[desenhos.length - 1]
+    if (!ultimo) return
+    removerDesenhoMapa(ultimo.id).catch((e) => setErroAcao(e.message))
   }
 
   async function aoAtribuirProficienciaHud(periciaId) {
@@ -507,14 +605,6 @@ export default function CampaignTablePage() {
     setEnviandoRolagem(true)
     setDadoAberto(false)
 
-    setHistoricoDados((atual) => [...atual, {
-      nome: nomeJogador,
-      texto: textoExpressao,
-      resultado: resultado.total,
-      dados: resultado.resultados,
-      termos: resultado.termosResolvidos,
-    }].slice(-50))
-
     if (solicitacaoParaConcluir) {
       setSolicitacaoAtivaId(null)
       concluirSolicitacaoRolagem(solicitacaoParaConcluir, {
@@ -569,15 +659,6 @@ export default function CampaignTablePage() {
     cancelarSolicitacaoRolagem(id).catch((e) => setErroAcao(e.message))
   }
 
-  function consumirHabilidadeEmAlvo(personagemAlvo) {
-    if (!habilidadeSelecionada || !personagemAlvo) return
-    if (perfilAtual === 'aventureiro' && String(personagemAlvo.id) !== String(personagemInicialDoAventureiro)) {
-      cancelarHabilidadeSelecionada()
-      return
-    }
-    cancelarHabilidadeSelecionada()
-  }
-
   useEffect(() => {
     const lista = historicoDadosListaRef.current
     if (!lista) return
@@ -607,6 +688,12 @@ export default function CampaignTablePage() {
     const canal = escutarRolagensDados(mundoId, (payload) => {
       setRolagemAtiva(payload)
       setEnviandoRolagem(false)
+      setHistoricoDados((atual) => [...atual, {
+        nome: payload.nomeJogador,
+        texto: payload.formula,
+        resultado: payload.total,
+        termos: payload.termos,
+      }].slice(-50))
     })
     canalRolagemRef.current = canal
 
@@ -615,6 +702,37 @@ export default function CampaignTablePage() {
       canal.parar()
     }
   }, [mundoId])
+
+  useEffect(() => {
+    if (!mundoId) return undefined
+
+    async function carregarDesenhos() {
+      try {
+        const dados = await listarDesenhosMapa(mundoId)
+        setDesenhos(dados)
+      } catch {
+        // desenhos são um extra visual; não impede a mesa de funcionar
+      }
+    }
+
+    carregarDesenhos()
+    const pararDeEscutar = escutarDesenhosMapa(mundoId, carregarDesenhos)
+    return pararDeEscutar
+  }, [mundoId])
+
+  useEffect(() => {
+    if (!desenhoAtivo) return undefined
+
+    function aoPressionarTecla(event) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        aoDesfazerUltimoDesenho()
+      }
+    }
+
+    window.addEventListener('keydown', aoPressionarTecla)
+    return () => window.removeEventListener('keydown', aoPressionarTecla)
+  }, [desenhoAtivo, desenhos, mundoId])
 
   useEffect(() => {
     if (solicitacaoPendenteParaMim && ultimaSolicitacaoAvisadaRef.current !== solicitacaoPendenteParaMim.id) {
@@ -672,6 +790,56 @@ export default function CampaignTablePage() {
     carregar()
   }, [mundoId, navegar])
 
+  // Mantém a lista de personagens (nome, nível, imagem, pontos de
+  // proficiência, notas...) sincronizada quando qualquer um deles é editado
+  // em outra aba/dispositivo (ex: pela ficha do personagem), sem precisar
+  // de F5 na mesa. O campo "notas" é preservado como está localmente porque
+  // o bloco de notas já tem seu próprio caminho de atualização otimista
+  // (aoMudarTexto) - sobrescrever aqui poderia "voltar no tempo" o texto
+  // enquanto o jogador ainda está digitando.
+  useEffect(() => {
+    if (!mundoId) return undefined
+
+    async function recarregarPersonagens() {
+      try {
+        const dados = await listarPersonagens(mundoId)
+        setPersonagens(dados)
+        setPersonagemAtual((atual) => {
+          if (!atual) return atual
+          const atualizado = dados.find((personagem) => String(personagem.id) === String(atual.id))
+          return atualizado ? { ...atualizado, notas: atual.notas } : atual
+        })
+      } catch {
+        // mantém os dados já carregados se a atualização falhar
+      }
+    }
+
+    const pararDeEscutar = escutarMudancasListaPersonagens(recarregarPersonagens, mundoId)
+    return pararDeEscutar
+  }, [mundoId])
+
+  // Mantém as barras de vida/mana/estamina exibidas nos tokens do mapa em
+  // dia quando qualquer personagem toma dano ou é curado em outra tela -
+  // sem isso, a barra de vida no mapa só atualizava pra quem estava com a
+  // ficha daquele personagem em foco no momento da mudança.
+  useEffect(() => {
+    if (!personagens.length) return undefined
+
+    const idsConhecidos = new Set(personagens.map((personagem) => String(personagem.id)))
+
+    const pararDeEscutar = escutarBarrasStatus((payload) => {
+      const linha = payload.new || payload.old
+      const personagemId = linha?.personagem_id
+      if (!personagemId || !idsConhecidos.has(String(personagemId))) return
+
+      listarBarras(personagemId)
+        .then((barras) => setBarrasPorPersonagem((atual) => ({ ...atual, [personagemId]: barras })))
+        .catch(() => {})
+    })
+
+    return pararDeEscutar
+  }, [personagens])
+
   useEffect(() => {
     if (perfilAtual === 'aventureiro' && personagemDoJogador) {
       const jaEstaNoPersonagemCorreto = personagemAtual && String(personagemAtual.id) === String(personagemDoJogador.id)
@@ -717,7 +885,8 @@ export default function CampaignTablePage() {
     }
 
     carregarHud()
-    return undefined
+    const pararDeEscutar = escutarMudancasPersonagem(personagemAtual.id, carregarHud)
+    return pararDeEscutar
   }, [personagemAtual?.id])
 
   useEffect(() => {
@@ -808,7 +977,7 @@ export default function CampaignTablePage() {
           atributos={hudAtributos}
           pericias={hudPericias}
           podeAlocarProficiencia={perfilAtual === 'mestre' || String(personagemAtual?.id) === String(personagemInicialDoAventureiro)}
-          podeRemoverProficiencia={perfilAtual === 'mestre'}
+          podeRemoverProficiencia={perfilAtual === 'mestre' || String(personagemAtual?.id) === String(personagemInicialDoAventureiro)}
           onAtribuirProficiencia={aoAtribuirProficienciaHud}
           onRemoverProficiencia={aoRemoverProficienciaHud}
         />
@@ -858,6 +1027,37 @@ export default function CampaignTablePage() {
           }}
         >
           <div className="campaign-map" />
+
+          <svg
+            className={`campaign-mapa-desenho ${desenhoAtivo ? 'is-ativo' : ''}`}
+            onPointerDown={aoPressionarParaDesenhar}
+            onPointerMove={aoMoverParaDesenhar}
+            onPointerUp={aoSoltarParaDesenhar}
+            onPointerLeave={aoSoltarParaDesenhar}
+          >
+            {desenhos.map((desenho) => (
+              <polyline
+                key={desenho.id}
+                points={(desenho.pontos || []).map((ponto) => `${ponto.x},${ponto.y}`).join(' ')}
+                fill="none"
+                stroke={desenho.cor || '#000000'}
+                strokeWidth={desenho.espessura || 3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ))}
+            {pontosAtuais.length > 1 && (
+              <polyline
+                points={pontosAtuais.map((ponto) => `${ponto.x},${ponto.y}`).join(' ')}
+                fill="none"
+                stroke="#000000"
+                strokeWidth={3}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={0.85}
+              />
+            )}
+          </svg>
 
           {personagens.map((personagem, indice) => {
             const pos = posicoes[personagem.id] || POSICOES[indice % POSICOES.length]
@@ -930,14 +1130,87 @@ export default function CampaignTablePage() {
           })}
         </div>
 
-        <div className="campaign-dice-floating">
+        <div className="campaign-ferramentas-menu">
+        <div className="campaign-ferramentas-menu__moldura" aria-hidden="true" />
+        <div className="campaign-ferramentas-menu__item campaign-ferramentas-menu__item--inventario">
           <button
             type="button"
-            className="campaign-dice-floating__button"
+            className={`campaign-floating-tool__button ${inventarioAberto ? 'is-ativo' : ''}`}
+            aria-label="Abrir inventário"
+            onClick={() => setInventarioAberto((atual) => !atual)}
+          >
+            <IconeMochila className="campaign-floating-tool__icone" />
+          </button>
+
+          {inventarioAberto && (
+            <div className="campaign-dice-floating__panel campaign-floating-tool__panel">
+              <InventoryPanel
+                personagens={personagens}
+                personagemPadraoId={personagemControladoPeloAventureiro?.id || ''}
+                podeEscolherPersonagem={perfilAtual === 'mestre'}
+              />
+            </div>
+          )}
+        </div>
+
+        {perfilAtual === 'aventureiro' && personagemControladoPeloAventureiro && (
+          <div className="campaign-ferramentas-menu__item campaign-ferramentas-menu__item--anotacao">
+            <button
+              type="button"
+              className={`campaign-floating-tool__button ${notasAberto ? 'is-ativo' : ''}`}
+              aria-label="Abrir anotações"
+              onClick={() => setNotasAberto((atual) => !atual)}
+            >
+              <IconeCaderno className="campaign-floating-tool__icone" />
+            </button>
+
+            {notasAberto && (
+              <div className="campaign-dice-floating__panel campaign-floating-tool__panel">
+                <NotepadPanel
+                  personagem={personagemAtual}
+                  aoMudarTexto={(personagemId, notas) => {
+                    setPersonagemAtual((atual) => (
+                      atual && String(atual.id) === String(personagemId) ? { ...atual, notas } : atual
+                    ))
+                    setPersonagens((atual) => atual.map((personagemItem) => (
+                      String(personagemItem.id) === String(personagemId) ? { ...personagemItem, notas } : personagemItem
+                    )))
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="campaign-ferramentas-menu__item campaign-ferramentas-menu__item--desenho">
+          <button
+            type="button"
+            className={`campaign-floating-tool__button ${desenhoAtivo ? 'is-ativo' : ''}`}
+            aria-label="Desenhar no mapa"
+            onClick={() => setDesenhoAtivo((atual) => !atual)}
+          >
+            <IconeLapis className="campaign-floating-tool__icone" />
+          </button>
+
+          {desenhoAtivo && perfilAtual === 'mestre' && (
+            <button type="button" className="campaign-desenho-limpar" onClick={aoLimparDesenhos}>
+              Limpar desenhos
+            </button>
+          )}
+        </div>
+
+        <div className="campaign-ferramentas-menu__item campaign-ferramentas-menu__item--dado">
+          <button
+            type="button"
+            className={`campaign-floating-tool__button ${dadoAberto ? 'is-ativo' : ''}`}
             aria-label="Abrir rolagem de dados"
             onClick={() => setDadoAberto((atual) => !atual)}
           >
-            <img src="/246569.png" alt="Dado de rolagem" className="campaign-dice-floating__image" />
+            <img
+              src="/246569.png"
+              alt="Dado de rolagem"
+              className="campaign-floating-tool__icone campaign-floating-tool__icone--invertido"
+            />
             {solicitacaoPendenteParaMim && <span className="campaign-dice-floating__badge" aria-hidden="true" />}
           </button>
 
@@ -1083,6 +1356,7 @@ export default function CampaignTablePage() {
               </button>
             </div>
           )}
+        </div>
         </div>
 
         {acaoPadraoExpandida && (

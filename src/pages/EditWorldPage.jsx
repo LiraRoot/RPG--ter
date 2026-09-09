@@ -17,6 +17,14 @@ export default function EditWorldPage() {
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState(null)
 
+  // Libera a URL temporária da pré-visualização quando ela é trocada por
+  // outra ou quando a página é fechada, pra não vazar memória.
+  useEffect(() => {
+    return () => {
+      if (imagemPreview?.startsWith('blob:')) URL.revokeObjectURL(imagemPreview)
+    }
+  }, [imagemPreview])
+
   useEffect(() => {
     const perfil = window.sessionStorage.getItem(PERFIL_KEY)
     const mestreAtual = (window.sessionStorage.getItem(MESTRE_ATUAL_KEY) || '').trim()

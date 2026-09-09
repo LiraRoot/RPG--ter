@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { buscarMundo, listarPersonagens, escutarMudancasListaPersonagens } from '../lib/api'
 
@@ -23,13 +23,7 @@ export default function CharacterListPage() {
   const perfil = window.sessionStorage.getItem(PERFIL_KEY)
   const podeEditarPersonagens = perfil === 'aventureiro' || perfil === 'mestre'
 
-  useEffect(() => {
-    carregar()
-    const pararDeEscutar = escutarMudancasListaPersonagens(carregar, mundoId || null)
-    return pararDeEscutar
-  }, [mundoId])
-
-  async function carregar() {
+  const carregar = useCallback(async () => {
     try {
       if (mundoId) {
         const mundoAtual = await buscarMundo(mundoId)
@@ -45,7 +39,13 @@ export default function CharacterListPage() {
     } finally {
       setCarregando(false)
     }
-  }
+  }, [mundoId])
+
+  useEffect(() => {
+    carregar()
+    const pararDeEscutar = escutarMudancasListaPersonagens(carregar, mundoId || null)
+    return pararDeEscutar
+  }, [mundoId, carregar])
 
   if (carregando) return <p>Carregando personagens...</p>
   if (erro) return <p>Erro ao carregar: {erro}</p>

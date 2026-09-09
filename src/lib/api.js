@@ -180,7 +180,9 @@ export async function excluirPersonagem(id) {
 
 // ---------- Imagem ----------
 
-export async function enviarImagemPersonagem(file) {
+// Um único bucket ("personagens") guarda as imagens de personagens e de
+// mundos - os dois usam a mesma função de upload por baixo.
+async function enviarImagem(file) {
   const nomeArquivo = `${crypto.randomUUID()}-${file.name}`
   const { error } = await supabase.storage.from('personagens').upload(nomeArquivo, file)
   if (error) throw error
@@ -188,13 +190,8 @@ export async function enviarImagemPersonagem(file) {
   return data.publicUrl
 }
 
-export async function enviarImagemMundo(file) {
-  const nomeArquivo = `${crypto.randomUUID()}-${file.name}`
-  const { error } = await supabase.storage.from('personagens').upload(nomeArquivo, file)
-  if (error) throw error
-  const { data } = supabase.storage.from('personagens').getPublicUrl(nomeArquivo)
-  return data.publicUrl
-}
+export const enviarImagemPersonagem = enviarImagem
+export const enviarImagemMundo = enviarImagem
 
 // ---------- Atributos ----------
 
@@ -252,6 +249,18 @@ export async function atualizarBarra(id, campos) {
 export async function removerBarra(id) {
   const { error } = await supabase.from('barras_status').delete().eq('id', id)
   if (error) throw error
+}
+
+// Escuta TODA mudança de barras de status (sem filtrar por personagem), pra
+// telas com vários personagens na tela (ex: a mesa) saberem quando alguma
+// barra de qualquer um deles mudou, sem precisar de uma inscrição por token.
+export function escutarBarrasStatus(aoMudar) {
+  const canal = supabase
+    .channel('barras-status-global')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'barras_status' }, aoMudar)
+    .subscribe()
+
+  return () => supabase.removeChannel(canal)
 }
 
 // ---------- Perícias ----------
@@ -504,4 +513,96 @@ export function escutarRolagensDados(mundoId, aoReceberRolagem) {
     enviar: (payload) => canal.send({ type: 'broadcast', event: 'rolagem', payload }),
     parar: () => supabase.removeChannel(canal),
   }
+}
+
+// ---------- Inventário ----------
+
+export async function listarItensInventario(personagemId) {
+  const { data, error } = await supabase
+    .from('itens_inventario')
+    .select('*')
+    .eq('personagem_id', personagemId)
+    .order('slot', { ascending: true })
+  if (error) throw error
+  return data
+}
+
+export async function definirItemInventario(personagemId, slot, nome) {
+  const { error } = await supabase
+    .from('itens_inventario')
+    .upsert({ personagem_id: personagemId, slot, nome }, { onConflict: 'personagem_id,slot' })
+  if (error) throw error
+}
+
+export async function removerItemInventario(personagemId, slot) {
+  const { error } = await supabase
+    .from('itens_inventario')
+    .delete()
+    .eq('personagem_id', personagemId)
+    .eq('slot', slot)
+  if (error) throw error
+}
+
+export function escutarInventario(personagemId, aoMudar) {
+  const canal = supabase
+    .channel(`inventario-${personagemId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'itens_inventario', filter: `personagem_id=eq.${personagemId}` },
+      aoMudar
+    )
+    .subscribe()
+
+  return () => supabase.removeChannel(canal)
+}
+
+// ---------- Desenhos no mapa ----------
+
+export async function listarDesenhosMapa(mundoId) {
+  const { data, error } = await supabase
+    .from('desenhos_mapa')
+    .select('*')
+    .eq('mundo_id', mundoId)
+    .order('criado_em', { ascending: true })
+  if (error) throw error
+  return data
+}
+
+export async function criarDesenhoMapa({ mundo_id, pontos, cor, espessura }) {
+  const { data, error } = await supabase
+    .from('desenhos_mapa')
+    .insert({ mundo_id, pontos, cor, espessura })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function limparDesenhosMapa(mundoId) {
+  const { error } = await supabase
+    .from('desenhos_mapa')
+    .delete()
+    .eq('mundo_id', mundoId)
+  if (error) throw error
+}
+
+export async function removerDesenhoMapa(id) {
+  const { error } = await supabase
+    .from('desenhos_mapa')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
+export function escutarDesenhosMapa(mundoId, aoMudar) {
+  const canal = supabase
+    .channel(`desenhos-mapa-${mundoId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'desenhos_mapa', filter: `mundo_id=eq.${mundoId}` },
+      aoMudar
+    )
+    .subscribe()
+
+  return () => supabase.removeChannel(canal)
 }

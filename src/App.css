@@ -34,6 +34,11 @@ body,
   color: #edf2f7;
 }
 
+body[data-theme='light'] {
+  background: #f3f3f1;
+  color: #171a1f;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -901,8 +906,12 @@ select:focus-visible {
 }
 
 .campaign-page {
-  max-width: 1280px;
-  margin: 0 auto;
+  /* Quebra o limite de 800px do .container (que envolve toda página) pra
+     essa tela poder usar quase a largura inteira da janela. */
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1900px, 92vw);
   padding-bottom: 36px;
 }
 
@@ -998,7 +1007,7 @@ select:focus-visible {
 .campaign-map-surface {
   position: relative;
   width: 100%;
-  height: min(72vh, 760px);
+  height: min(82vh, 980px);
   min-height: 420px;
   border-radius: 24px;
   overflow: hidden;
@@ -1027,7 +1036,7 @@ select:focus-visible {
     linear-gradient(rgba(52, 52, 52, 0.48) 1px, transparent 1px),
     linear-gradient(90deg, rgba(52, 52, 52, 0.48) 1px, transparent 1px),
     linear-gradient(135deg, #d9d9d9 0%, #c5c5c5 24%, #b5b5b5 48%, #9a9a9a 100%);
-  background-size: 32px 32px, 32px 32px, 100% 100%;
+  background-size: 80px 80px, 80px 80px, 100% 100%;
   background-position: center center, center center, center center;
 }
 
@@ -1132,37 +1141,12 @@ select:focus-visible {
   cursor: not-allowed;
 }
 
-.campaign-dice-floating {
-  position: absolute;
-  left: 18px;
-  bottom: 18px;
-  z-index: 25;
-}
-
-.campaign-dice-floating__button {
-  position: relative;
-  width: 73.6px;
-  height: 73.6px;
-  border: none;
-  padding: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: #f8fafc;
-  cursor: pointer;
-  box-shadow: none;
-  transition: transform 0.2s ease;
-}
-
-.campaign-dice-floating__button:hover {
-  transform: scale(1.12);
-}
-
 .campaign-dice-floating__badge {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 14px;
-  height: 14px;
+  top: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #ef4444;
   border: 2px solid #0b0d10;
@@ -1174,18 +1158,288 @@ select:focus-visible {
   50% { transform: scale(1.25); opacity: 0.75; }
 }
 
-.campaign-dice-floating__image {
+/* Menu retangular com os 4 botões (inventário, anotação, desenho, dado)
+   dispostos em cruz/losango dentro de uma caixa só, no canto inferior
+   esquerdo do tabuleiro. */
+.campaign-ferramentas-menu {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: repeat(3, 48px);
+  grid-template-rows: repeat(3, 48px);
+  grid-template-areas:
+    ".         inventario ."
+    "anotacao  .          desenho"
+    ".         dado       .";
+  align-items: center;
+  justify-items: center;
+}
+
+/* Moldura em losango (quadrado rotacionado 45°) atrás dos botões, imitando
+   a moldura dourada do design de referência, com uma cruz dourada dividindo
+   os 4 quadrantes (inventário/anotação/desenho/dado). */
+.campaign-ferramentas-menu__moldura {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 98px;
+  height: 98px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: linear-gradient(135deg, #1a2036, #090b14);
+  border: 3px double #d4a94a;
+  box-shadow:
+    0 0 0 2px rgba(6, 8, 16, 0.9),
+    inset 0 0 0 5px rgba(6, 8, 16, 0.9),
+    inset 0 0 0 6px rgba(212, 169, 74, 0.55),
+    0 0 13px rgba(212, 169, 74, 0.3);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.campaign-ferramentas-menu__moldura::before,
+.campaign-ferramentas-menu__moldura::after {
+  content: '';
+  position: absolute;
+  background: #d4a94a;
+}
+
+.campaign-ferramentas-menu__moldura::before {
+  top: 50%;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.campaign-ferramentas-menu__moldura::after {
+  left: 50%;
+  top: 10%;
+  bottom: 10%;
+  width: 2px;
+  transform: translateX(-50%);
+}
+
+.campaign-ferramentas-menu__item {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.campaign-ferramentas-menu__item--inventario { grid-area: inventario; }
+.campaign-ferramentas-menu__item--anotacao { grid-area: anotacao; }
+.campaign-ferramentas-menu__item--desenho { grid-area: desenho; }
+.campaign-ferramentas-menu__item--dado { grid-area: dado; }
+
+/* Puxa cada ícone bem pro centro do losango - nas pontas ele fica espremido
+   pela moldura, que estreita bem ali perto do vértice. */
+.campaign-ferramentas-menu__item--inventario .campaign-floating-tool__icone { transform: translateY(18px); }
+.campaign-ferramentas-menu__item--anotacao .campaign-floating-tool__icone { transform: translateX(18px); }
+.campaign-ferramentas-menu__item--desenho .campaign-floating-tool__icone { transform: translateX(-18px); }
+.campaign-ferramentas-menu__item--dado .campaign-floating-tool__icone { transform: translateY(-18px); }
+
+.campaign-floating-tool__button {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #f8fafc;
+  cursor: pointer;
+  box-shadow: none;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.campaign-floating-tool__button:hover {
+  transform: scale(1.12);
+}
+
+.campaign-floating-tool__button.is-ativo {
+  color: #7dd3fc;
+}
+
+.campaign-floating-tool__icone {
+  width: 23px;
+  height: 23px;
   display: block;
   object-fit: contain;
   filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.4));
+  transition: filter 0.2s ease;
+}
+
+.campaign-floating-tool__button:hover .campaign-floating-tool__icone {
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 14px rgba(56, 189, 248, 0.9));
+}
+
+.campaign-floating-tool__button.is-ativo .campaign-floating-tool__icone {
+  filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.8));
+}
+
+/* O ícone antigo do dado é preto com pips brancos - invertido pra virar
+   branco com pips escuros e continuar visível sobre o losango escuro. */
+.campaign-floating-tool__icone.campaign-floating-tool__icone--invertido {
+  filter: invert(1) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.4));
+}
+
+.campaign-floating-tool__button:hover .campaign-floating-tool__icone.campaign-floating-tool__icone--invertido {
+  filter: invert(1) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.4)) drop-shadow(0 0 14px rgba(56, 189, 248, 0.9));
+}
+
+.campaign-floating-tool__button.is-ativo .campaign-floating-tool__icone.campaign-floating-tool__icone--invertido {
+  filter: invert(1) drop-shadow(0 0 10px rgba(125, 211, 252, 0.8));
+}
+
+.campaign-floating-tool__panel {
+  position: absolute;
+  left: 0;
+  bottom: 55px;
+}
+
+.campaign-desenho-limpar {
+  position: absolute;
+  left: 55px;
+  bottom: 16px;
+  white-space: nowrap;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(127, 29, 29, 0.35);
+  color: #fecaca;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Camada de desenho livre sobre o mapa */
+.campaign-mapa-desenho {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+  touch-action: none;
+}
+
+.campaign-mapa-desenho.is-ativo {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+/* Inventário */
+.inventario-painel {
+  min-width: 260px;
+}
+
+.inventario-selecionar-personagem {
+  width: 100%;
+  min-height: 34px;
+  margin-bottom: 10px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(2, 6, 23, 0.55);
+  color: #f8fafc;
+}
+
+.inventario-personagem-atual {
+  margin-bottom: 10px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.inventario-grade {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.inventario-slot {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.55);
+  overflow: hidden;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.inventario-slot.is-ocupado {
+  border-style: solid;
+  border-color: rgba(250, 204, 21, 0.4);
+  background: rgba(250, 204, 21, 0.1);
+}
+
+.inventario-slot.is-alvo {
+  border-color: rgba(56, 189, 248, 0.7);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.inventario-slot__item {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #fef3c7;
+  cursor: grab;
+}
+
+.inventario-slot__nome {
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.inventario-slot__vazio {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.inventario-aviso {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+/* Bloco de notas */
+.bloco-notas {
+  width: 260px;
+}
+
+.bloco-notas__area {
+  width: 100%;
+  min-height: 180px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px);
+  background-size: 100% 22px;
+  color: #f1f5f9;
+  font-size: 0.82rem;
+  line-height: 22px;
+  resize: vertical;
 }
 
 .campaign-dice-floating__panel {
   position: absolute;
   left: 0;
-  bottom: 66px;
+  bottom: 43px;
   width: min(300px, 76vw);
   padding: 14px 12px 12px;
   border-radius: 18px;

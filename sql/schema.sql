@@ -143,6 +143,42 @@ create table if not exists public.solicitacoes_rolagem (
   concluido_em timestamp with time zone
 );
 
+-- Anotações pessoais do personagem (bloco de notas)
+alter table if exists public.personagens
+  add column if not exists notas text default '';
+
+update public.personagens
+set notas = ''
+where notas is null;
+
+alter table if exists public.personagens
+  alter column notas set not null,
+  alter column notas set default '';
+
+-- Inventário (9 compartimentos por personagem)
+create table if not exists public.itens_inventario (
+  id uuid primary key default uuid_generate_v4(),
+  personagem_id uuid references personagens(id) on delete cascade not null,
+  slot integer not null check (slot >= 0 and slot <= 8),
+  nome text not null default '',
+  unique (personagem_id, slot)
+);
+
+-- Desenhos no mapa (anotações livres a lápis, visíveis pra todo mundo na mesa)
+create table if not exists public.desenhos_mapa (
+  id uuid primary key default uuid_generate_v4(),
+  mundo_id uuid references mundos(id) on delete cascade not null,
+  pontos jsonb not null,
+  cor text not null default '#000000',
+  espessura integer not null default 3,
+  criado_em timestamp with time zone default now()
+);
+
+-- Necessário para que eventos de DELETE filtrados por mundo_id (usado por
+-- Ctrl+Z e "Limpar desenhos") cheguem via Realtime a todos os clientes -
+-- sem isso o Postgres não tem os dados da linha apagada pra avaliar o filtro.
+alter table if exists public.desenhos_mapa replica identity full;
+
 -- RLS
 alter table if exists mundos enable row level security;
 alter table if exists personagens enable row level security;
@@ -151,6 +187,8 @@ alter table if exists barras_status enable row level security;
 alter table if exists pericias enable row level security;
 alter table if exists habilidades enable row level security;
 alter table if exists solicitacoes_rolagem enable row level security;
+alter table if exists itens_inventario enable row level security;
+alter table if exists desenhos_mapa enable row level security;
 
 drop policy if exists "acesso_total_mundos" on mundos;
 drop policy if exists "acesso_total_personagens" on personagens;
@@ -159,6 +197,8 @@ drop policy if exists "acesso_total_barras" on barras_status;
 drop policy if exists "acesso_total_pericias" on pericias;
 drop policy if exists "acesso_total_habilidades" on habilidades;
 drop policy if exists "acesso_total_solicitacoes_rolagem" on solicitacoes_rolagem;
+drop policy if exists "acesso_total_itens_inventario" on itens_inventario;
+drop policy if exists "acesso_total_desenhos_mapa" on desenhos_mapa;
 
 create policy "acesso_total_mundos" on mundos for all using (true) with check (true);
 create policy "acesso_total_personagens" on personagens for all using (true) with check (true);
@@ -167,6 +207,8 @@ create policy "acesso_total_barras" on barras_status for all using (true) with c
 create policy "acesso_total_pericias" on pericias for all using (true) with check (true);
 create policy "acesso_total_habilidades" on habilidades for all using (true) with check (true);
 create policy "acesso_total_solicitacoes_rolagem" on solicitacoes_rolagem for all using (true) with check (true);
+create policy "acesso_total_itens_inventario" on itens_inventario for all using (true) with check (true);
+create policy "acesso_total_desenhos_mapa" on desenhos_mapa for all using (true) with check (true);
 
 -- Realtime
 do $$
@@ -208,5 +250,17 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table solicitacoes_rolagem;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table itens_inventario;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table desenhos_mapa;
 exception when duplicate_object then null;
 end $$;
